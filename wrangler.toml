@@ -1,0 +1,17 @@
+name = "kobo2logie"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+DEFAULT_KOBO_BASE_URL = "https://kf.kobotoolbox.org"
+MAX_BUFFER_SIZE = "50"
+MAX_BODY_BYTES = "1048576"
+
+[[durable_objects.bindings]]
+name = "FORM_SESSION"
+class_name = "FormSession"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["FormSession"]
