@@ -94,4 +94,34 @@ configure.post("/permissions", async (c) => {
   });
 });
 
+// ── POST /api/configure/forward ───────────────────────────────────────────────
+
+configure.post("/forward", async (c) => {
+  const { uid, forwardUrl } = await c.req.json<{
+    uid: string;
+    forwardUrl: string;
+  }>();
+
+  if (!uid) {
+    return c.json({ error: "uid is required" }, 400);
+  }
+
+  if (forwardUrl) {
+    let parsed: URL;
+    try {
+      parsed = new URL(forwardUrl);
+    } catch {
+      return c.json({ error: "forwardUrl is not a valid URL" }, 400);
+    }
+    if (parsed.protocol !== "https:") {
+      return c.json({ error: "forwardUrl must use https://" }, 400);
+    }
+    await c.env.FORWARD_CONFIG.put(uid, JSON.stringify({ forwardUrl }));
+  } else {
+    await c.env.FORWARD_CONFIG.delete(uid);
+  }
+
+  return c.json({ ok: true });
+});
+
 export default configure;

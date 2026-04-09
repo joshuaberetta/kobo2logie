@@ -54,6 +54,37 @@ export function fileAttachments(submission: KoboSubmission): KoboAttachment[] {
 }
 
 /**
+ * Collects all string values from the flat submission JSON (excluding _attachments).
+ * Used to identify which attachments are actually referenced in the submission data —
+ * the REST service may filter out some questions, so only referenced images are forwarded.
+ */
+export function submissionImageFilenames(submission: KoboSubmission): Set<string> {
+  const names = new Set<string>();
+  for (const [key, value] of Object.entries(submission)) {
+    if (key === "_attachments") continue;
+    if (typeof value === "string" && value.length > 0) {
+      names.add(value);
+    }
+  }
+  return names;
+}
+
+/**
+ * Returns non-deleted image attachments whose media_file_basename appears as a
+ * string value somewhere in the submission body (excluding _attachments).
+ * This mirrors which images were actually captured by the filtered REST service payload.
+ */
+export function imageAttachmentsToForward(submission: KoboSubmission): KoboAttachment[] {
+  const filenames = submissionImageFilenames(submission);
+  return (submission._attachments ?? []).filter(
+    (a) =>
+      !a.is_deleted &&
+      a.mimetype.startsWith("image/") &&
+      filenames.has(a.media_file_basename)
+  );
+}
+
+/**
  * Format a Kobo submission time string for display.
  */
 export function formatSubmissionTime(iso: string): string {

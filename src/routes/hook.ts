@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types.js";
+import type { KoboSubmission } from "../lib/kobo.js";
+import { forwardSubmission } from "../lib/forward.js";
 
 const hook = new Hono<{ Bindings: Env }>();
 
@@ -42,6 +44,25 @@ hook.post("/:formUID", async (c) => {
 
   if (!doResponse.ok) {
     return c.text("Failed to relay submission", 502);
+  }
+
+  // Fire-and-forget forwarding if a URL is configured for this form
+  const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
+  if (fwdConfig) {
+    const { forwardUrl } = JSON.parse(fwdConfig) as { forwardUrl: string };
+    if (forwardUrl) {
+      c.executionCtx.waitUntil(
+        forwardSubmission(
+          body as KoboSubmission,
+          forwardUrl,
+          c.env.DEFAULT_KOBO_BASE_URL,
+          {
+            global: c.env.KOBO_API_TOKEN_GLOBAL,
+            eu: c.env.KOBO_API_TOKEN_EU,
+          }
+        )
+      );
+    }
   }
 
   return c.text("OK", 200);

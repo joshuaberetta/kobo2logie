@@ -478,6 +478,8 @@ ui.get("/configure", (c) => {
     .status.pending { color: #6b7280; }
     .status.success { color: #15803d; }
     .status.error { color: #dc2626; }
+    .section-divider { border: none; border-top: 1.5px solid #f0f0f0; margin: 2rem 0 1.5rem; }
+    .section-title { font-size: .9rem; font-weight: 700; color: #374151; margin-bottom: 1rem; }
   </style>
 </head>
 <body>
@@ -514,6 +516,25 @@ ui.get("/configure", (c) => {
       <div class="result-row">
         <span class="result-label">Permissions</span>
         <div class="status" id="perm-status"></div>
+      </div>
+    </div>
+
+    <hr class="section-divider" />
+    <p class="section-title">Forwarding (optional)</p>
+
+    <div class="fields">
+      <div>
+        <label for="forward-url">Forwarding URL</label>
+        <input id="forward-url" type="url" placeholder="https://your-service.example.com/webhook" autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+
+    <button class="action-btn" id="forward-btn" onclick="setForwarding()">Set forwarding</button>
+
+    <div class="results" id="forward-results" style="margin-top:1rem;">
+      <div class="result-row">
+        <span class="result-label">Forwarding</span>
+        <div class="status" id="forward-status"></div>
       </div>
     </div>
   </div>
@@ -587,6 +608,36 @@ ui.get("/configure", (c) => {
         setStatus('perm-status', 'error', 'Network error: ' + permResult.reason?.message);
       }
 
+      btn.disabled = false;
+    }
+
+    async function setForwarding() {
+      const uid = document.getElementById('uid').value.trim();
+      const forwardUrl = document.getElementById('forward-url').value.trim();
+      const resultsEl = document.getElementById('forward-results');
+      resultsEl.style.display = 'flex';
+      if (!uid) {
+        setStatus('forward-status', 'error', 'Enter a Form UID above first.');
+        return;
+      }
+      const btn = document.getElementById('forward-btn');
+      btn.disabled = true;
+      setStatus('forward-status', 'pending', forwardUrl ? 'Saving\u2026' : 'Clearing\u2026');
+      try {
+        const res = await fetch('/api/configure/forward', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid, forwardUrl }),
+        });
+        if (res.ok) {
+          setStatus('forward-status', 'success', forwardUrl ? '\u2713 Forwarding URL saved.' : '\u2713 Forwarding cleared.');
+        } else {
+          const data = await res.json();
+          setStatus('forward-status', 'error', 'Error: ' + (data.error ?? res.status));
+        }
+      } catch (err) {
+        setStatus('forward-status', 'error', 'Network error: ' + err.message);
+      }
       btn.disabled = false;
     }
   </script>
