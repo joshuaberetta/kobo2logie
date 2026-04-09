@@ -468,15 +468,13 @@ ui.get("/configure", (c) => {
     label { display: block; font-size: .85rem; font-weight: 600; color: #444; margin-bottom: .4rem; }
     input, select { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .95rem; outline: none; transition: border-color .15s; background: #fff; }
     input:focus, select:focus { border-color: #2563eb; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-    @media (max-width: 520px) { .actions { grid-template-columns: 1fr; } }
-    .action-section { border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
-    .action-title { font-size: .9rem; font-weight: 700; color: #1a1a1a; }
-    .action-desc { font-size: .8rem; color: #6b7280; line-height: 1.5; }
-    .action-btn { padding: .65rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .action-btn { margin-top: .5rem; width: 100%; padding: .7rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background .15s; }
     .action-btn:hover { background: #1d4ed8; }
     .action-btn:disabled { background: #93c5fd; cursor: not-allowed; }
-    .status { font-size: .8rem; min-height: 1.5em; line-height: 1.5; word-break: break-word; }
+    .results { display: none; margin-top: 1.25rem; border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.25rem; display: none; flex-direction: column; gap: .6rem; }
+    .result-row { display: flex; align-items: baseline; gap: .75rem; }
+    .result-label { font-size: .78rem; font-weight: 700; color: #6b7280; width: 100px; flex-shrink: 0; }
+    .status { font-size: .82rem; line-height: 1.5; word-break: break-word; flex: 1; }
     .status.pending { color: #6b7280; }
     .status.success { color: #15803d; }
     .status.error { color: #dc2626; }
@@ -506,18 +504,15 @@ ui.get("/configure", (c) => {
       </div>
     </div>
 
-    <div class="actions">
-      <div class="action-section">
-        <div class="action-title">REST Service</div>
-        <div class="action-desc">Registers this Worker&#39;s webhook URL as a REST Service on the Kobo project so submissions are forwarded automatically.</div>
-        <button class="action-btn" id="rest-btn" onclick="configureRestService()">Configure REST Service</button>
+    <button class="action-btn" id="setup-btn" onclick="setupIntegration()">Set up integration</button>
+
+    <div class="results" id="results">
+      <div class="result-row">
+        <span class="result-label">REST Service</span>
         <div class="status" id="rest-status"></div>
       </div>
-
-      <div class="action-section">
-        <div class="action-title">User Permissions</div>
-        <div class="action-desc">Grants <code>wfp_logie</code> view_submissions permission on this project so the app can authenticate requests.</div>
-        <button class="action-btn" id="perm-btn" onclick="configurePermissions()">Configure Permissions</button>
+      <div class="result-row">
+        <span class="result-label">Permissions</span>
         <div class="status" id="perm-status"></div>
       </div>
     </div>
@@ -538,83 +533,61 @@ ui.get("/configure", (c) => {
       el.textContent = message;
     }
 
-    async function configureRestService() {
+    async function setupIntegration() {
       const { server, uid, token } = getInputs();
       if (!uid || !token) {
+        document.getElementById('results').style.display = 'block';
         setStatus('rest-status', 'error', 'Form UID and API Token are required.');
+        setStatus('perm-status', 'error', 'Form UID and API Token are required.');
         return;
       }
-      const btn = document.getElementById('rest-btn');
+      const btn = document.getElementById('setup-btn');
       btn.disabled = true;
+      document.getElementById('results').style.display = 'block';
       setStatus('rest-status', 'pending', 'Registering\u2026');
-      const webhookUrl = location.origin + '/api/hook/' + uid;
-      try {
-        const res = await fetch(server + '/api/v2/assets/' + uid + '/hooks/', {
+      setStatus('perm-status', 'pending', 'Applying permissions\u2026');
+
+      const [restResult, permResult] = await Promise.allSettled([
+        fetch('/api/configure/rest-service', {
           method: 'POST',
-          headers: {
-            'Authorization': 'Token ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: 'LogIE Integration',
-            endpoint: webhookUrl,
-            active: true,
-            subset_fields: [],
-            email_notification: true,
-            export_type: 'json',
-            auth_level: 'no_auth',
-            settings: { custom_headers: {} },
-            payload_template: '',
-          }),
-        });
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server, uid, token }),
+        }),
+        fetch('/api/configure/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server, uid, token }),
+        }),
+      ]);
+
+      // REST Service result
+      if (restResult.status === 'fulfilled') {
+        const res = restResult.value;
         if (res.ok) {
           const data = await res.json();
-          setStatus('rest-status', 'success', '\u2713 Registered: ' + (data.endpoint ?? webhookUrl));
+          setStatus('rest-status', 'success', '\u2713 Registered: ' + (data.endpoint ?? ''));
         } else {
           const text = await res.text();
           setStatus('rest-status', 'error', 'Error ' + res.status + ': ' + text.slice(0, 200));
         }
-      } catch (err) {
-        setStatus('rest-status', 'error', 'Network error: ' + err.message);
-      } finally {
-        btn.disabled = false;
+      } else {
+        setStatus('rest-status', 'error', 'Network error: ' + restResult.reason?.message);
       }
-    }
 
-    async function configurePermissions() {
-      const { server, uid, token } = getInputs();
-      if (!uid || !token) {
-        setStatus('perm-status', 'error', 'Form UID and API Token are required.');
-        return;
-      }
-      const btn = document.getElementById('perm-btn');
-      btn.disabled = true;
-      setStatus('perm-status', 'pending', 'Applying permissions\u2026');
-      try {
-        const res = await fetch(server + '/api/v2/assets/' + uid + '/permission-assignments/bulk/', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Token ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify([
-            {
-              user: server + '/api/v2/users/wfp_logie/',
-              permission: server + '/api/v2/permissions/view_submissions/',
-            },
-          ]),
-        });
+      // Permissions result
+      if (permResult.status === 'fulfilled') {
+        const res = permResult.value;
         if (res.ok) {
-          setStatus('perm-status', 'success', '\u2713 Permissions applied for wfp_logie');
+          setStatus('perm-status', 'success', '\u2713 Applied for wfp_logie');
         } else {
           const text = await res.text();
           setStatus('perm-status', 'error', 'Error ' + res.status + ': ' + text.slice(0, 200));
         }
-      } catch (err) {
-        setStatus('perm-status', 'error', 'Network error: ' + err.message);
-      } finally {
-        btn.disabled = false;
+      } else {
+        setStatus('perm-status', 'error', 'Network error: ' + permResult.reason?.message);
       }
+
+      btn.disabled = false;
     }
   </script>
 </body>

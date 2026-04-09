@@ -4,6 +4,7 @@ import ui from "./routes/ui.js";
 import hook from "./routes/hook.js";
 import stream from "./routes/stream.js";
 import media from "./routes/media.js";
+import configure from "./routes/configure.js";
 export { FormSession } from "./FormSession.js";
 import type { Env } from "./types.js";
 
@@ -17,5 +18,6 @@ app.route("/", ui);
 app.route("/api/hook", hook);
 app.route("/api/stream", stream);
 app.route("/api/media", media);
+app.route("/api/configure", configure);
 
 export default app;

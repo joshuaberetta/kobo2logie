@@ -108,12 +108,7 @@ Open the configure page and enter your form UID, API token, and server (Global o
 https://kobo2logie.<your-subdomain>.workers.dev/configure
 ```
 
-Then click the two buttons:
-
-| Button | What it does |
-|---|---|
-| **Configure REST Service** | Registers this Worker's webhook URL as a REST Service on the Kobo project automatically |
-| **Configure Permissions** | Grants `wfp_logie` `view_submissions` access on the project so the app can authenticate requests |
+Click **Set up integration**. The page will register the REST Service and apply user permissions simultaneously, showing the result of each inline.
 
 Alternatively, you can register the REST Service manually in KoboToolbox under **Settings → REST Services → Add Service**, pointing the endpoint at `.../api/hook/{formUID}` with method `POST` and content type `application/json`.
 
@@ -176,6 +171,7 @@ kobo2logie/
     ├── types.ts               # Shared Env interface
     ├── routes/
     │   ├── ui.ts              # Home page + /view/:formUID viewer + /configure page
+    │   ├── configure.ts       # POST /api/configure/* — Kobo API proxy (REST service + permissions)
     │   ├── hook.ts            # POST /api/hook/:formUID
     │   ├── stream.ts          # WebSocket /api/stream/:formUID
     │   └── media.ts           # Authenticated media proxy /api/media
