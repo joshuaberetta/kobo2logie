@@ -27,13 +27,32 @@ configure.post("/rest-service", async (c) => {
 
   const workerOrigin = new URL(c.req.url).origin;
   const webhookUrl = `${workerOrigin}/api/hook/${uid}`;
+  const hooksUrl = `${server}/api/v2/assets/${uid}/hooks/`;
+  const authHeaders = {
+    Authorization: `Token ${token}`,
+    "Content-Type": "application/json",
+  };
 
-  const res = await fetch(`${server}/api/v2/assets/${uid}/hooks/`, {
+  // Check for an existing "LogIE Integration" hook before creating a new one
+  const listRes = await fetch(hooksUrl, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  if (!listRes.ok) {
+    const body = await listRes.text();
+    return new Response(body, {
+      status: listRes.status,
+      headers: { "Content-Type": listRes.headers.get("Content-Type") ?? "application/json" },
+    });
+  }
+  const listData = await listRes.json<{ results: Array<{ name: string; uid: string; url: string }> }>();
+  const existing = listData.results.find((h) => h.name === "LogIE Integration");
+  if (existing) {
+    return c.json({ already_exists: true, uid: existing.uid, url: existing.url }, 200);
+  }
+
+  const res = await fetch(hooksUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Token ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders,
     body: JSON.stringify({
       name: "LogIE Integration",
       endpoint: webhookUrl,
@@ -70,22 +89,60 @@ configure.post("/permissions", async (c) => {
     return c.json({ error: "uid and token are required" }, 400);
   }
 
-  const res = await fetch(
-    `${server}/api/v2/assets/${uid}/permission-assignments/bulk/`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          user: `${server}/api/v2/users/wfp_logie/`,
-          permission: `${server}/api/v2/permissions/view_submissions/`,
-        },
-      ]),
-    }
+  const permsUrl = `${server}/api/v2/assets/${uid}/permission-assignments/`;
+  const authHeaders = {
+    Authorization: `Token ${token}`,
+    "Content-Type": "application/json",
+  };
+  const newUser = `${server}/api/v2/users/wfp_logie/`;
+  const newPerm = `${server}/api/v2/permissions/view_submissions/`;
+
+  // Fetch the asset to determine the owner username
+  const assetRes = await fetch(`${server}/api/v2/assets/${uid}/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  if (!assetRes.ok) {
+    const body = await assetRes.text();
+    return new Response(body, {
+      status: assetRes.status,
+      headers: { "Content-Type": assetRes.headers.get("Content-Type") ?? "application/json" },
+    });
+  }
+  const asset = await assetRes.json<{ owner__username: string }>();
+  const ownerUserUrl = `${server}/api/v2/users/${asset.owner__username}/`;
+
+  // Fetch existing permissions so we can preserve them in the bulk POST
+  const listRes = await fetch(permsUrl, { headers: { Authorization: `Token ${token}` } });
+  if (!listRes.ok) {
+    const body = await listRes.text();
+    return new Response(body, {
+      status: listRes.status,
+      headers: { "Content-Type": listRes.headers.get("Content-Type") ?? "application/json" },
+    });
+  }
+  const existing = await listRes.json<Array<{ user: string; permission: string }>>();
+
+  // Check if the permission already exists
+  const alreadyGranted = existing.some(
+    (p) => p.user === newUser && p.permission === newPerm
   );
+  if (alreadyGranted) {
+    return c.json({ already_exists: true }, 200);
+  }
+
+  // Merge: keep non-owner existing entries and append the new one
+  const merged = [
+    ...existing
+      .filter((p) => p.user !== ownerUserUrl)
+      .map((p) => ({ user: p.user, permission: p.permission })),
+    { user: newUser, permission: newPerm },
+  ];
+
+  const res = await fetch(`${permsUrl}bulk/`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify(merged),
+  });
 
   const body = await res.text();
   return new Response(body, {

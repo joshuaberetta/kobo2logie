@@ -586,7 +586,8 @@ ui.get("/configure", (c) => {
         const res = restResult.value;
         if (res.ok) {
           const data = await res.json();
-          setStatus('rest-status', 'success', '\u2713 Registered: ' + (data.endpoint ?? ''));
+          const msg = data.already_exists ? '\u2713 Already registered' : '\u2713 Registered: ' + (data.endpoint ?? '');
+          setStatus('rest-status', 'success', msg);
         } else {
           const text = await res.text();
           setStatus('rest-status', 'error', 'Error ' + res.status + ': ' + text.slice(0, 200));
@@ -599,7 +600,9 @@ ui.get("/configure", (c) => {
       if (permResult.status === 'fulfilled') {
         const res = permResult.value;
         if (res.ok) {
-          setStatus('perm-status', 'success', '\u2713 Applied for wfp_logie');
+          const data = await res.json();
+          const msg = data.already_exists ? '\u2713 Already applied' : '\u2713 Applied for wfp_logie';
+          setStatus('perm-status', 'success', msg);
         } else {
           const text = await res.text();
           setStatus('perm-status', 'error', 'Error ' + res.status + ': ' + text.slice(0, 200));
