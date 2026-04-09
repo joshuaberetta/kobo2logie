@@ -14,4 +14,4 @@ class_name = "FormSession"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["FormSession"]
+new_sqlite_classes = ["FormSession"]
