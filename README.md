@@ -100,16 +100,22 @@ This gives you:
 | `.../api/hook/{formUID}` | Paste into KoboToolbox REST Service |
 | `.../view/{formUID}` | Open in your browser to see submissions |
 
-### Configure the REST Service in KoboToolbox
+### Configure the integration
 
-1. Open your project in KoboToolbox
-2. Go to **Settings → REST Services → Add Service**
-3. Set:
-   - **Name**: anything (e.g. `kobo2logie`)
-   - **Endpoint URL**: `https://kobo2logie.<subdomain>.workers.dev/api/hook/{formUID}`
-   - **Method**: `POST`
-   - **Content Type**: `application/json`
-4. Save
+Open the configure page and enter your form UID, API token, and server (Global or EU):
+
+```
+https://kobo2logie.<your-subdomain>.workers.dev/configure
+```
+
+Then click the two buttons:
+
+| Button | What it does |
+|---|---|
+| **Configure REST Service** | Registers this Worker's webhook URL as a REST Service on the Kobo project automatically |
+| **Configure Permissions** | Grants `wfp_logie` `view_submissions` access on the project so the app can authenticate requests |
+
+Alternatively, you can register the REST Service manually in KoboToolbox under **Settings → REST Services → Add Service**, pointing the endpoint at `.../api/hook/{formUID}` with method `POST` and content type `application/json`.
 
 ---
 
@@ -169,7 +175,7 @@ kobo2logie/
     ├── FormSession.ts         # Durable Object — WebSocket hub + submission buffer
     ├── types.ts               # Shared Env interface
     ├── routes/
-    │   ├── ui.ts              # Home page + /view/:formUID viewer
+    │   ├── ui.ts              # Home page + /view/:formUID viewer + /configure page
     │   ├── hook.ts            # POST /api/hook/:formUID
     │   ├── stream.ts          # WebSocket /api/stream/:formUID
     │   └── media.ts           # Authenticated media proxy /api/media
@@ -181,7 +187,7 @@ kobo2logie/
 
 ## Security notes
 
-- **Your API token is never stored server-side.** It lives in `localStorage` and is sent as a query parameter to the media proxy only. It will be visible in browser DevTools network requests.
+- **Your API token is never stored server-side.** On the viewer page it lives in `localStorage` and is sent as a query parameter to the media proxy only. On the configure page it is used directly from the input field and never persisted. Tokens will be visible in browser DevTools network requests.
 - **The media proxy blocks SSRF.** Only URLs from the configured Kobo base URL hostname can be proxied.
 - **The webhook endpoint is unauthenticated.** The form UID in the URL is the only access discriminator. Since nothing is persisted, a spurious POST has no lasting effect beyond briefly occupying the buffer.
 - **Submission JSON is rendered safely.** The raw JSON `<pre>` block is populated via `textContent`. Dynamic HTML in the detail panel is built from server-controlled field names and URLs, not from submission field values.

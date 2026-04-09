@@ -33,6 +33,9 @@ ui.get("/", (c) => {
     .copy-btn:hover { background: #c7d7fd; }
     .view-link { display: inline-block; margin-top: .25rem; font-size: .85rem; color: #2563eb; text-decoration: none; }
     .view-link:hover { text-decoration: underline; }
+    .configure-link-wrap { margin-top: 1.75rem; padding-top: 1rem; border-top: 1px solid #f0f0f0; text-align: center; }
+    .configure-link { font-size: .82rem; color: #9ca3af; text-decoration: none; }
+    .configure-link:hover { color: #2563eb; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -56,6 +59,9 @@ ui.get("/", (c) => {
         <button class="copy-btn" onclick="copy('view-url', this)">Copy</button>
       </div>
       <a id="view-link" class="view-link" href="#" target="_blank">Open viewer →</a>
+    </div>
+    <div class="configure-link-wrap">
+      <a class="configure-link" href="/configure">⚙ Configure integration</a>
     </div>
   </div>
 
@@ -433,6 +439,182 @@ ui.get("/view/:formUID", (c) => {
       const orig = btn.textContent;
       btn.textContent = 'Copied!';
       setTimeout(() => btn.textContent = orig, 1500);
+    }
+  </script>
+</body>
+</html>`
+  );
+});
+
+// ── Configure page ──────────────────────────────────────────────────────────
+
+ui.get("/configure", (c) => {
+  return c.html(
+    html`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>kobo2logie — Configure</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+    .back-link { align-self: flex-start; margin-bottom: 1rem; font-size: .85rem; color: #2563eb; text-decoration: none; max-width: 640px; width: 100%; }
+    .back-link:hover { text-decoration: underline; }
+    .card { background: #fff; border-radius: 12px; padding: 2.5rem; max-width: 640px; width: 100%; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: .25rem; }
+    .subtitle { color: #666; margin-bottom: 2rem; font-size: .95rem; }
+    .fields { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: #444; margin-bottom: .4rem; }
+    input, select { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .95rem; outline: none; transition: border-color .15s; background: #fff; }
+    input:focus, select:focus { border-color: #2563eb; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 520px) { .actions { grid-template-columns: 1fr; } }
+    .action-section { border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+    .action-title { font-size: .9rem; font-weight: 700; color: #1a1a1a; }
+    .action-desc { font-size: .8rem; color: #6b7280; line-height: 1.5; }
+    .action-btn { padding: .65rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .action-btn:hover { background: #1d4ed8; }
+    .action-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+    .status { font-size: .8rem; min-height: 1.5em; line-height: 1.5; word-break: break-word; }
+    .status.pending { color: #6b7280; }
+    .status.success { color: #15803d; }
+    .status.error { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <a class="back-link" href="/">← Home</a>
+  <div class="card">
+    <h1>kobo2logie</h1>
+    <p class="subtitle">Configure KoboToolbox integration</p>
+
+    <div class="fields">
+      <div>
+        <label for="server">Server</label>
+        <select id="server">
+          <option value="https://kf.kobotoolbox.org">Global — kf.kobotoolbox.org</option>
+          <option value="https://eu.kobotoolbox.org">EU — eu.kobotoolbox.org</option>
+        </select>
+      </div>
+      <div>
+        <label for="uid">Form UID</label>
+        <input id="uid" type="text" placeholder="e.g. a6LDoopohAy6s2Vw9gWo8p" autocomplete="off" spellcheck="false" />
+      </div>
+      <div>
+        <label for="token">API Token</label>
+        <input id="token" type="password" placeholder="your KoboToolbox API token" autocomplete="off" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <div class="action-section">
+        <div class="action-title">REST Service</div>
+        <div class="action-desc">Registers this Worker&#39;s webhook URL as a REST Service on the Kobo project so submissions are forwarded automatically.</div>
+        <button class="action-btn" id="rest-btn" onclick="configureRestService()">Configure REST Service</button>
+        <div class="status" id="rest-status"></div>
+      </div>
+
+      <div class="action-section">
+        <div class="action-title">User Permissions</div>
+        <div class="action-desc">Grants <code>wfp_logie</code> view_submissions permission on this project so the app can authenticate requests.</div>
+        <button class="action-btn" id="perm-btn" onclick="configurePermissions()">Configure Permissions</button>
+        <div class="status" id="perm-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function getInputs() {
+      return {
+        server: document.getElementById('server').value,
+        uid: document.getElementById('uid').value.trim(),
+        token: document.getElementById('token').value.trim(),
+      };
+    }
+
+    function setStatus(id, state, message) {
+      const el = document.getElementById(id);
+      el.className = 'status ' + state;
+      el.textContent = message;
+    }
+
+    async function configureRestService() {
+      const { server, uid, token } = getInputs();
+      if (!uid || !token) {
+        setStatus('rest-status', 'error', 'Form UID and API Token are required.');
+        return;
+      }
+      const btn = document.getElementById('rest-btn');
+      btn.disabled = true;
+      setStatus('rest-status', 'pending', 'Registering\u2026');
+      const webhookUrl = location.origin + '/api/hook/' + uid;
+      try {
+        const res = await fetch(server + '/api/v2/assets/' + uid + '/hooks/', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Token ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: 'LogIE Integration',
+            endpoint: webhookUrl,
+            active: true,
+            subset_fields: [],
+            email_notification: true,
+            export_type: 'json',
+            auth_level: 'no_auth',
+            settings: { custom_headers: {} },
+            payload_template: '',
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setStatus('rest-status', 'success', '\u2713 Registered: ' + (data.endpoint ?? webhookUrl));
+        } else {
+          const text = await res.text();
+          setStatus('rest-status', 'error', 'Error ' + res.status + ': ' + text.slice(0, 200));
+        }
+      } catch (err) {
+        setStatus('rest-status', 'error', 'Network error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function configurePermissions() {
+      const { server, uid, token } = getInputs();
+      if (!uid || !token) {
+        setStatus('perm-status', 'error', 'Form UID and API Token are required.');
+        return;
+      }
+      const btn = document.getElementById('perm-btn');
+      btn.disabled = true;
+      setStatus('perm-status', 'pending', 'Applying permissions\u2026');
+      try {
+        const res = await fetch(server + '/api/v2/assets/' + uid + '/permission-assignments/bulk/', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Token ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify([
+            {
+              user: server + '/api/v2/users/wfp_logie/',
+              permission: server + '/api/v2/permissions/view_submissions/',
+            },
+          ]),
+        });
+        if (res.ok) {
+          setStatus('perm-status', 'success', '\u2713 Permissions applied for wfp_logie');
+        } else {
+          const text = await res.text();
+          setStatus('perm-status', 'error', 'Error ' + res.status + ': ' + text.slice(0, 200));
+        }
+      } catch (err) {
+        setStatus('perm-status', 'error', 'Network error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
     }
   </script>
 </body>
