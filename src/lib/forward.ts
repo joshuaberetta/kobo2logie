@@ -1,4 +1,4 @@
-import { imageAttachmentsToForward } from "./kobo.js";
+import { attachmentsToForward } from "./kobo.js";
 import type { KoboSubmission } from "./kobo.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
@@ -30,14 +30,15 @@ export async function forwardSubmission(
   submission: KoboSubmission,
   forwardUrl: string,
   koboBaseUrl: string,
-  tokens: { global: string; eu: string }
+  tokens: { global: string; eu: string },
+  jsonPayload?: Record<string, unknown>
 ): Promise<void> {
   try {
-    const attachments = imageAttachmentsToForward(submission);
+    const attachments = attachmentsToForward(submission, jsonPayload);
     const token = resolveKoboToken(koboBaseUrl, tokens);
 
     const form = new FormData();
-    form.append("submission", JSON.stringify(submission));
+    form.append("submission", JSON.stringify(jsonPayload ?? submission));
 
     await Promise.all(
       attachments.map(async (att) => {

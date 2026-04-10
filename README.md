@@ -1,6 +1,6 @@
 # kobo2logie
 
-Real-time webhook viewer for KoboToolbox. When a form is submitted, the full JSON payload appears instantly in the browser — including image previews in a 3-column grid — with no database and no historical data fetching.
+A Cloudflare Worker that receives KoboToolbox form submission webhooks and forwards them to LogIE. Provides a simple configuration UI to set up the KoboToolbox REST Service integration and permissions in one click.
 
 Built with [Hono](https://hono.dev/) on Cloudflare Workers + Durable Objects.
 
@@ -11,12 +11,8 @@ Built with [Hono](https://hono.dev/) on Cloudflare Workers + Durable Objects.
 ```
 Kobo form submitted
   → POSTs JSON to /api/hook/{formUID}
-    → Cloudflare Worker forwards to a Durable Object
-      → DO broadcasts over WebSocket to all open browser tabs
-        → UI renders JSON + attachment images in real-time
+    → Cloudflare Worker validates and forwards to LogIE (and optionally to a forwarding URL)
 ```
-
-Submissions are held in memory (last 50 per form) and cleared when the Worker idles. There is no database — closing the browser tab loses the session data, which is intentional.
 
 ---
 
@@ -41,21 +37,11 @@ npm install
 npm run dev
 ```
 
-The Worker runs at `http://localhost:8787`. Wrangler emulates Durable Objects locally.
-
-To simulate a Kobo webhook POST during development:
-
-```bash
-curl -X POST http://localhost:8787/api/hook/YOUR_FORM_UID \
-  -H "Content-Type: application/json" \
-  -d @sample-payload.json
-```
+The Worker runs at `http://localhost:8787`.
 
 ---
 
 ## Deployment
-
-### 1. Deploy to Cloudflare
 
 ```bash
 wrangler deploy
@@ -67,94 +53,50 @@ On first deploy, Wrangler will print your Worker URL:
 https://kobo2logie.<your-subdomain>.workers.dev
 ```
 
-### 2. (Optional) Custom domain
-
-Add a custom domain in the Cloudflare dashboard under **Workers & Pages → your Worker → Settings → Domains & Routes**.
-
 ---
 
-## Setup in KoboToolbox
+## Setting up an integration
 
-### Find your form UID
+### Step 1 — Register the REST service and permissions
 
-Open your form in KoboToolbox. The UID is in the URL:
-
-```
-https://kf.kobotoolbox.org/forms/a6LDoopohAy6s2Vw9gWo8p/...
-                                   ^^^^^^^^^^^^^^^^^^^^^^
-                                   this is your form UID
-```
-
-### Generate your URLs
-
-Open the home page of the deployed Worker and enter the form UID:
+Open the Worker root URL in your browser:
 
 ```
 https://kobo2logie.<your-subdomain>.workers.dev
 ```
 
-This gives you:
-
-| URL | Purpose |
-|---|---|
-| `.../api/hook/{formUID}` | Paste into KoboToolbox REST Service |
-| `.../view/{formUID}` | Open in your browser to see submissions |
-
-### Configure the integration
-
-Open the configure page and enter your form UID, API token, and server (Global or EU):
-
-```
-https://kobo2logie.<your-subdomain>.workers.dev/configure
-```
-
-Click **Set up integration**. The page will register the REST Service and apply user permissions simultaneously, showing the result of each inline.
-
-Alternatively, you can register the REST Service manually in KoboToolbox under **Settings → REST Services → Add Service**, pointing the endpoint at `.../api/hook/{formUID}` with method `POST` and content type `application/json`.
-
----
-
-## Using the viewer
-
-Open the viewer URL in your browser:
-
-```
-https://kobo2logie.<subdomain>.workers.dev/view/{formUID}
-```
-
-### First-time settings
-
-Click **⚙ Settings** in the top-right corner and enter:
+Fill in:
 
 | Field | Value |
 |---|---|
-| **Kobo API Token** | Your token from KoboToolbox → Account Settings → API Token |
-| **Kobo Base URL** | `https://kf.kobotoolbox.org` (or your self-hosted instance URL) |
+| **Server** | Global (`kf.kobotoolbox.org`) or EU (`eu.kobotoolbox.org`) |
+| **Form UID** | Found in the KoboToolbox form URL, e.g. `a6LDoopohAy6s2Vw9gWo8p` |
+| **API Token** | From KoboToolbox → Account Settings → API Token |
 
-Click **Save**. These are stored in your browser's `localStorage` and only used for loading media attachments — they are never stored server-side.
+Click **Set up integration**. The page will:
 
-### Viewing submissions
+1. Check if a *LogIE Integration* REST Service already exists on the form — if not, register one pointing at `/api/hook/{formUID}`
+2. Check if `wfp_logie` already has `view_submissions` permission — if not, add it while preserving all existing permissions
 
-- The **left panel** lists received submissions, newest first
-- Click any row to load it in the right panel
-- The **right panel** shows the raw JSON above a 3-column image grid
-- Clicking an image opens the full-size version in a new tab
-- Non-image attachments (audio, video, documents) appear as download links
-- The **●  Live** indicator in the header shows the WebSocket is connected; it reconnects automatically if dropped
+Each step reports its result inline. Both steps are idempotent — safe to run again if something changes.
 
-> **Note:** Submissions only appear while the browser tab is open. Refreshing or closing the tab clears the in-memory list. The Worker retains up to 50 submissions for ~60 seconds after all tabs close, so a quick reconnect will recover recent data.
+Once both succeed, click **Configure project →** to continue.
 
----
+### Step 2 — Configure project settings
 
-## Configuration
+The project settings page (`/{formUID}`) lets you configure per-form options:
 
-All configuration is in `wrangler.toml` under `[vars]`:
+| Setting | Description |
+|---|---|
+| **Fields subset** | Optional list of field names to include in the forwarded payload. Type a name and press **Enter** or **,** to add it as a tag; press **Backspace** to remove the last one. Leave empty to forward all fields. |
 
-| Variable | Default | Description |
-|---|---|---|
-| `DEFAULT_KOBO_BASE_URL` | `https://kf.kobotoolbox.org` | Kobo server used for SSRF validation |
-| `MAX_BUFFER_SIZE` | `50` | Max submissions held in the Durable Object buffer |
-| `MAX_BODY_BYTES` | `1048576` | Max webhook payload size (1 MB) |
+Expand **Advanced settings** to configure:
+
+| Setting | Description |
+|---|---|
+| **Forwarding URL** | Optional HTTPS URL to relay every received submission to another service. Leave empty to disable. |
+
+Click **Save** to persist the settings. You can return to this page at any time at `/{formUID}`.
 
 ---
 
@@ -170,20 +112,21 @@ kobo2logie/
     ├── FormSession.ts         # Durable Object — WebSocket hub + submission buffer
     ├── types.ts               # Shared Env interface
     ├── routes/
-    │   ├── ui.ts              # Home page + /view/:formUID viewer + /configure page
-    │   ├── configure.ts       # POST /api/configure/* — Kobo API proxy (REST service + permissions)
-    │   ├── hook.ts            # POST /api/hook/:formUID
+    │   ├── ui.ts              # UI pages: GET / (setup) and GET /:uid (project settings)
+    │   ├── configure.ts       # /api/configure/* — Kobo API proxy + project KV config
+    │   ├── hook.ts            # POST /api/hook/:formUID — webhook receiver
     │   ├── stream.ts          # WebSocket /api/stream/:formUID
     │   └── media.ts           # Authenticated media proxy /api/media
     └── lib/
-        └── kobo.ts            # Types, SSRF helper, attachment utilities
+        ├── kobo.ts            # Types, SSRF helper, attachment utilities
+        └── forward.ts         # Multipart forwarding to external services
 ```
 
 ---
 
 ## Security notes
 
-- **Your API token is never stored server-side.** On the viewer page it lives in `localStorage` and is sent as a query parameter to the media proxy only. On the configure page it is used directly from the input field and never persisted. Tokens will be visible in browser DevTools network requests.
+- **Your API token is never stored server-side.** It is used directly from the input field during configuration calls and is never persisted. Tokens will be visible in browser DevTools network requests during setup.
+- **Only allowed Kobo servers are contacted.** The configure endpoints enforce an allowlist (`kf.kobotoolbox.org`, `eu.kobotoolbox.org`) to prevent SSRF.
 - **The media proxy blocks SSRF.** Only URLs from the configured Kobo base URL hostname can be proxied.
-- **The webhook endpoint is unauthenticated.** The form UID in the URL is the only access discriminator. Since nothing is persisted, a spurious POST has no lasting effect beyond briefly occupying the buffer.
-- **Submission JSON is rendered safely.** The raw JSON `<pre>` block is populated via `textContent`. Dynamic HTML in the detail panel is built from server-controlled field names and URLs, not from submission field values.
+- **The webhook endpoint is unauthenticated.** The form UID in the URL is the only access discriminator.

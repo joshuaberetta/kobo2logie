@@ -49,17 +49,35 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding if a URL is configured for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl } = JSON.parse(fwdConfig) as { forwardUrl: string };
+    const { forwardUrl, fields } = JSON.parse(fwdConfig) as {
+      forwardUrl?: string;
+      fields?: string[];
+    };
     if (forwardUrl) {
+      const submission = body as KoboSubmission;
+
+      // Build a filtered payload if the user has specified a fields subset
+      let jsonPayload: Record<string, unknown> | undefined;
+      if (fields && fields.length > 0) {
+        jsonPayload = {};
+        for (const f of fields) {
+          if (Object.prototype.hasOwnProperty.call(submission, f)) {
+            (jsonPayload as Record<string, unknown>)[f] =
+              (submission as Record<string, unknown>)[f];
+          }
+        }
+      }
+
       c.executionCtx.waitUntil(
         forwardSubmission(
-          body as KoboSubmission,
+          submission,
           forwardUrl,
           c.env.DEFAULT_KOBO_BASE_URL,
           {
             global: c.env.KOBO_API_TOKEN_GLOBAL,
             eu: c.env.KOBO_API_TOKEN_EU,
-          }
+          },
+          jsonPayload
         )
       );
     }

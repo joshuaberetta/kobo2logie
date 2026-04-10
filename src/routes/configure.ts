@@ -181,4 +181,54 @@ configure.post("/forward", async (c) => {
   return c.json({ ok: true });
 });
 
+// ── GET /api/configure/project/:uid ──────────────────────────────────────────
+
+configure.get("/project/:uid", async (c) => {
+  const uid = c.req.param("uid");
+  const raw = await c.env.FORWARD_CONFIG.get(uid);
+  const config = raw ? (JSON.parse(raw) as { forwardUrl?: string; fields?: string[] }) : {};
+  return c.json({ forwardUrl: config.forwardUrl ?? "", fields: config.fields ?? [] });
+});
+
+// ── POST /api/configure/project/:uid ─────────────────────────────────────────
+
+configure.post("/project/:uid", async (c) => {
+  const uid = c.req.param("uid");
+  const { forwardUrl, fields } = await c.req.json<{
+    forwardUrl?: string;
+    fields?: string[];
+  }>();
+
+  if (forwardUrl) {
+    let parsed: URL;
+    try {
+      parsed = new URL(forwardUrl);
+    } catch {
+      return c.json({ error: "forwardUrl is not a valid URL" }, 400);
+    }
+    if (parsed.protocol !== "https:") {
+      return c.json({ error: "forwardUrl must use https://" }, 400);
+    }
+  }
+
+  const safeFields = Array.isArray(fields)
+    ? fields.map((f) => String(f).trim()).filter(Boolean)
+    : [];
+  const safeUrl = forwardUrl?.trim() ?? "";
+
+  if (!safeUrl && safeFields.length === 0) {
+    await c.env.FORWARD_CONFIG.delete(uid);
+  } else {
+    // Preserve any other keys already in the config (e.g. set by /forward)
+    const existing = await c.env.FORWARD_CONFIG.get(uid);
+    const current = existing ? (JSON.parse(existing) as Record<string, unknown>) : {};
+    await c.env.FORWARD_CONFIG.put(
+      uid,
+      JSON.stringify({ ...current, forwardUrl: safeUrl, fields: safeFields })
+    );
+  }
+
+  return c.json({ ok: true });
+});
+
 export default configure;

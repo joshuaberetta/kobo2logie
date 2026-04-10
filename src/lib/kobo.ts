@@ -46,6 +46,23 @@ export function imageAttachments(submission: KoboSubmission): KoboAttachment[] {
 
 /**
  * Returns only non-deleted non-image attachments (files, audio, video, etc.)
+ * that are referenced (i.e. their basename appears as a string value) in the
+ * given reference object (defaults to the full submission if omitted).
+ */
+export function nonImageAttachments(
+  submission: KoboSubmission,
+  reference?: Record<string, unknown>
+): KoboAttachment[] {
+  const filenames = submissionImageFilenames(
+    reference !== undefined ? { ...submission, ...reference, _attachments: submission._attachments } : submission
+  );
+  return (submission._attachments ?? []).filter(
+    (a) => !a.is_deleted && !a.mimetype.startsWith("image/") && filenames.has(a.media_file_basename)
+  );
+}
+
+/**
+ * Returns only non-deleted non-image attachments (files, audio, video, etc.)
  */
 export function fileAttachments(submission: KoboSubmission): KoboAttachment[] {
   return (submission._attachments ?? []).filter(
@@ -70,18 +87,31 @@ export function submissionImageFilenames(submission: KoboSubmission): Set<string
 }
 
 /**
- * Returns non-deleted image attachments whose media_file_basename appears as a
- * string value somewhere in the submission body (excluding _attachments).
- * This mirrors which images were actually captured by the filtered REST service payload.
+ * Returns non-deleted attachments (all mimetypes) whose media_file_basename
+ * appears as a string value in the reference payload.
+ * When a fields subset is active, pass the filtered jsonPayload as reference
+ * so only attachments relevant to those fields are fetched and forwarded.
  */
-export function imageAttachmentsToForward(submission: KoboSubmission): KoboAttachment[] {
-  const filenames = submissionImageFilenames(submission);
+export function attachmentsToForward(
+  submission: KoboSubmission,
+  reference?: Record<string, unknown>
+): KoboAttachment[] {
+  const scanTarget = reference ?? submission;
+  const filenames = new Set<string>();
+  for (const [key, value] of Object.entries(scanTarget)) {
+    if (key === "_attachments") continue;
+    if (typeof value === "string" && value.length > 0) {
+      filenames.add(value);
+    }
+  }
   return (submission._attachments ?? []).filter(
-    (a) =>
-      !a.is_deleted &&
-      a.mimetype.startsWith("image/") &&
-      filenames.has(a.media_file_basename)
+    (a) => !a.is_deleted && filenames.has(a.media_file_basename)
   );
+}
+
+/** @deprecated Use attachmentsToForward instead */
+export function imageAttachmentsToForward(submission: KoboSubmission): KoboAttachment[] {
+  return attachmentsToForward(submission);
 }
 
 /**
