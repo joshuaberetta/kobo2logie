@@ -25,6 +25,11 @@ configure.post("/rest-service", async (c) => {
     return c.json({ error: "uid and token are required" }, 400);
   }
 
+  // Persist the server choice so the survey endpoint can use it without re-asking
+  const projRaw = await c.env.FORWARD_CONFIG.get(uid);
+  const projCurrent = projRaw ? (JSON.parse(projRaw) as Record<string, unknown>) : {};
+  await c.env.FORWARD_CONFIG.put(uid, JSON.stringify({ ...projCurrent, server }));
+
   const workerOrigin = new URL(c.req.url).origin;
   const webhookUrl = `${workerOrigin}/api/hook/${uid}`;
   const hooksUrl = `${server}/api/v2/assets/${uid}/hooks/`;
@@ -188,17 +193,21 @@ configure.get("/project/:uid", async (c) => {
   const raw = await c.env.FORWARD_CONFIG.get(uid);
   const config = raw
     ? (JSON.parse(raw) as {
+        server?: string;
         forwardUrl?: string;
         forwardToken?: string;
         fields?: string[];
-        transcribe?: { questions: string[]; model?: string };
+        transcribe?: { questions: string[]; model?: string; prompt?: string };
+        describe?: { questions: string[]; model?: string; prompt?: string };
       })
     : {};
   return c.json({
+    server: config.server ?? "",
     forwardUrl: config.forwardUrl ?? "",
     forwardToken: config.forwardToken ?? "",
     fields: config.fields ?? [],
     transcribe: config.transcribe ?? null,
+    describe: config.describe ?? null,
   });
 });
 
@@ -206,11 +215,12 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, describe } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
-    transcribe?: { questions: string[]; model?: string } | null;
+    transcribe?: { questions: string[]; model?: string; prompt?: string } | null;
+    describe?: { questions: string[]; model?: string; prompt?: string } | null;
   }>();
 
   if (forwardUrl) {
@@ -237,6 +247,23 @@ configure.post("/project/:uid", async (c) => {
     safeTranscribe = {
       questions: safeQuestions,
       ...(transcribe.model ? { model: String(transcribe.model).trim() } : {}),
+      ...(transcribe.prompt ? { prompt: String(transcribe.prompt).trim() } : {}),
+    };
+  }
+
+  // Validate describe config if provided
+  let safeDescribe: { questions: string[]; model?: string; prompt?: string } | undefined;
+  if (describe != null) {
+    if (!Array.isArray(describe.questions)) {
+      return c.json({ error: "describe.questions must be an array" }, 400);
+    }
+    const safeQuestions = describe.questions
+      .map((q) => String(q).trim())
+      .filter(Boolean);
+    safeDescribe = {
+      questions: safeQuestions,
+      ...(describe.model ? { model: String(describe.model).trim() } : {}),
+      ...(describe.prompt ? { prompt: String(describe.prompt).trim() } : {}),
     };
   }
 
@@ -246,7 +273,7 @@ configure.post("/project/:uid", async (c) => {
   const safeUrl = forwardUrl?.trim() ?? "";
   const safeToken = forwardToken?.trim() ?? "";
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -264,10 +291,60 @@ configure.post("/project/:uid", async (c) => {
     } else if (safeTranscribe !== undefined) {
       next.transcribe = safeTranscribe;
     }
+    // describe: null means "clear", undefined means "don't touch"
+    if (describe === null) {
+      delete next.describe;
+    } else if (safeDescribe !== undefined) {
+      next.describe = safeDescribe;
+    }
     await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }
 
   return c.json({ ok: true });
+});
+
+// ── POST /api/configure/survey/:uid ─────────────────────────────────────────
+// Proxies to the Kobo asset API using the wfp_logie server token.
+
+configure.get("/survey/:uid", async (c) => {
+  const uid = c.req.param("uid");
+
+  // Read the server stored during REST service setup; fall back to env default
+  const raw = await c.env.FORWARD_CONFIG.get(uid);
+  const config = raw ? (JSON.parse(raw) as { server?: string }) : {};
+  const server =
+    config.server && ALLOWED_SERVERS.has(config.server)
+      ? config.server
+      : c.env.DEFAULT_KOBO_BASE_URL;
+
+  const token =
+    new URL(server).hostname === "eu.kobotoolbox.org"
+      ? c.env.KOBO_API_TOKEN_EU
+      : c.env.KOBO_API_TOKEN_GLOBAL;
+
+  const res = await fetch(`${server}/api/v2/assets/${uid}/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    return new Response(body, {
+      status: res.status,
+      headers: { "Content-Type": res.headers.get("Content-Type") ?? "application/json" },
+    });
+  }
+
+  const asset = await res.json<{
+    content?: {
+      survey?: Array<{ type: string; $xpath: string; label?: string[] }>;
+    };
+  }>();
+
+  const SKIP = new Set(["begin_group", "end_group", "begin_repeat", "end_repeat"]);
+  const questions = (asset.content?.survey ?? [])
+    .filter((q) => q.$xpath && !SKIP.has(q.type))
+    .map((q) => ({ xpath: q.$xpath, label: q.label?.[0] ?? q.$xpath, type: q.type }));
+
+  return c.json({ questions });
 });
 
 export default configure;

@@ -11,7 +11,10 @@ Built with [Hono](https://hono.dev/) on Cloudflare Workers + Durable Objects.
 ```
 Kobo form submitted
   → POSTs JSON to /api/hook/{formUID}
-    → Cloudflare Worker validates and forwards to LogIE (and optionally to a forwarding URL)
+    → Cloudflare Worker
+        → optionally filters fields
+        → optionally transcribes audio attachments via OpenAI
+        → forwards enriched payload to an external service
 ```
 
 ---
@@ -39,6 +42,14 @@ npm run dev
 
 The Worker runs at `http://localhost:8787`.
 
+Create a `.dev.vars` file in the project root with your secrets (this file is gitignored):
+
+```ini
+KOBO_API_TOKEN_GLOBAL=your-global-kobo-token
+KOBO_API_TOKEN_EU=your-eu-kobo-token
+OPENAI_API_KEY=sk-...        # only needed if using audio transcription
+```
+
 ---
 
 ## Deployment
@@ -51,6 +62,14 @@ On first deploy, Wrangler will print your Worker URL:
 
 ```
 https://kobo2logie.<your-subdomain>.workers.dev
+```
+
+Set production secrets:
+
+```bash
+wrangler secret put KOBO_API_TOKEN_GLOBAL
+wrangler secret put KOBO_API_TOKEN_EU
+wrangler secret put OPENAI_API_KEY   # only needed if using audio transcription
 ```
 
 ---
@@ -84,20 +103,37 @@ Once both succeed, click **Configure project →** to continue.
 
 ### Step 2 — Configure project settings
 
-The project settings page (`/{formUID}`) lets you configure per-form options:
+The project settings page loads all survey questions directly from the Kobo API on page open. No extra input is needed — the server and credentials are already known from Step 1.
+
+#### Advanced settings
 
 | Setting | Description |
 |---|---|
-| **Fields subset** | Optional list of field names to include in the forwarded payload. Type a name and press **Enter** or **,** to add it as a tag; press **Backspace** to remove the last one. Leave empty to forward all fields. |
-
-Expand **Advanced settings** to configure:
-
-| Setting | Description |
-|---|---|
-| **Forwarding URL** | Optional HTTPS URL to relay every received submission to another service. Leave empty to disable. |
+| **Forwarding URL** | Optional HTTPS URL to relay every received submission to an external service. |
 | **Bearer token** | Optional token sent as `Authorization: Bearer <token>` on each forwarded request. |
 
-Click **Save** to persist the settings. You can return to this page at any time at `/{formUID}`.
+#### Fields subset
+
+A scrollable checkbox list of every question in the form. All fields are checked by default (forward everything). Uncheck individual fields to exclude them from the forwarded payload.
+
+- The header shows a **selected / total** count badge.
+- Use **Select all** / **Deselect all** for bulk actions.
+- Use the **▼ / ▶** toggle button to collapse or expand the list.
+
+#### Transcribe audio
+
+Enable the **Transcribe audio** toggle to have audio attachment questions transcribed via the OpenAI API before forwarding. When enabled, a checkbox list of all audio-type questions in the form is shown — all are pre-selected; deselect any you don't want transcribed.
+
+For each transcribed question, the worker fetches the audio attachment from Kobo, sends it to OpenAI, and injects a `<question_xpath>_transcript` key into the submission payload before forwarding.
+
+| Setting | Description |
+|---|---|
+| **Audio questions** | Checkbox list of audio questions. All selected by default. |
+| **Model** | OpenAI model to use — `gpt-4o-mini-transcribe` (default) or `gpt-4o-transcribe`. |
+
+> Files larger than 25 MB are silently skipped (OpenAI hard limit). Transcription errors never block submission forwarding.
+
+Click **Save** to persist all settings. You can return to this page at any time.
 
 ---
 
@@ -120,8 +156,31 @@ kobo2logie/
     │   └── media.ts           # Authenticated media proxy /api/media
     └── lib/
         ├── kobo.ts            # Types, SSRF helper, attachment utilities
-        └── forward.ts         # Multipart forwarding to external services
+        ├── forward.ts         # Multipart forwarding to external services
+        └── transcribe.ts      # OpenAI audio transcription helper
 ```
+
+---
+
+## KV config shape
+
+Per-project settings are stored in the `FORWARD_CONFIG` KV namespace under the form UID key:
+
+```json
+{
+  "server": "https://kf.kobotoolbox.org",
+  "forwardUrl": "https://your-service.example.com/webhook",
+  "forwardToken": "optional-bearer-token",
+  "fields": ["xpath1", "xpath2"],
+  "transcribe": {
+    "questions": ["audio_question_xpath"],
+    "model": "gpt-4o-mini-transcribe"
+  }
+}
+```
+
+- `fields` — empty array means forward all fields.
+- `transcribe` — `null` or absent means transcription is disabled.
 
 ---
 
@@ -131,3 +190,4 @@ kobo2logie/
 - **Only allowed Kobo servers are contacted.** The configure endpoints enforce an allowlist (`kf.kobotoolbox.org`, `eu.kobotoolbox.org`) to prevent SSRF.
 - **The media proxy blocks SSRF.** Only URLs from the configured Kobo base URL hostname can be proxied.
 - **The webhook endpoint is unauthenticated.** The form UID in the URL is the only access discriminator.
+- **Audio files are streamed directly to OpenAI** and are not stored by the Worker.

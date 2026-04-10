@@ -1,6 +1,7 @@
 import { attachmentsToForward } from "./kobo.js";
 import type { KoboSubmission } from "./kobo.js";
 import { transcribeAudio } from "./transcribe.js";
+import { describeImage } from "./describe.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
@@ -28,6 +29,10 @@ function resolveKoboToken(
  * named question are fetched and transcribed; the results are injected into the
  * submission JSON as "<questionName>_transcript" before forwarding.
  *
+ * If describeConfig and openaiApiKey are provided, image attachments for each
+ * named question are fetched and described; the results are injected into the
+ * submission JSON as "<questionName>_description" before forwarding.
+ *
  * The correct wfp_logie Kobo token is selected based on koboBaseUrl hostname.
  * All errors are swallowed and logged — this function never throws.
  */
@@ -38,8 +43,9 @@ export async function forwardSubmission(
   tokens: { global: string; eu: string },
   jsonPayload?: Record<string, unknown>,
   forwardToken?: string,
-  transcribeConfig?: { questions: string[]; model?: string },
-  openaiApiKey?: string
+  transcribeConfig?: { questions: string[]; model?: string; prompt?: string },
+  openaiApiKey?: string,
+  describeConfig?: { questions: string[]; model?: string; prompt?: string }
 ): Promise<void> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
@@ -78,13 +84,57 @@ export async function forwardSubmission(
               blob,
               att.media_file_basename,
               openaiApiKey,
-              transcribeConfig.model
+              transcribeConfig.model,
+              transcribeConfig.prompt
             );
             if (transcript) {
               payload[`${questionName}_transcript`] = transcript;
             }
           } catch (err) {
             console.error(`[transcribe] Error transcribing "${questionName}":`, err);
+          }
+        })
+      );
+    }
+
+    // ── Image description ──────────────────────────────────────────────────
+    if (describeConfig && openaiApiKey && describeConfig.questions.length > 0) {
+      const imageByXpath = new Map(
+        (submission._attachments ?? [])
+          .filter((a) => !a.is_deleted && a.mimetype.startsWith("image/"))
+          .map((a) => [a.question_xpath, a])
+      );
+
+      await Promise.all(
+        describeConfig.questions.map(async (questionName) => {
+          const att = imageByXpath.get(questionName);
+          if (!att) {
+            console.warn(`[describe] No image attachment found for question_xpath "${questionName}"`);
+            return;
+          }
+          try {
+            const res = await fetch(att.download_url, {
+              headers: { Authorization: `Token ${token}` },
+            });
+            if (!res.ok) {
+              console.error(
+                `[describe] Failed to fetch image for "${questionName}": HTTP ${res.status}`
+              );
+              return;
+            }
+            const blob = await res.blob();
+            const description = await describeImage(
+              blob,
+              att.media_file_basename,
+              openaiApiKey,
+              describeConfig.model,
+              describeConfig.prompt
+            );
+            if (description) {
+              payload[`${questionName}_description`] = description;
+            }
+          } catch (err) {
+            console.error(`[describe] Error describing "${questionName}":`, err);
           }
         })
       );

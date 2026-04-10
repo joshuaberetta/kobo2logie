@@ -9,7 +9,8 @@ export async function transcribeAudio(
   audioBlob: Blob,
   filename: string,
   openaiApiKey: string,
-  model = "gpt-4o-mini-transcribe"
+  model = "gpt-4o-mini-transcribe",
+  prompt?: string
 ): Promise<string> {
   if (audioBlob.size > MAX_AUDIO_BYTES) {
     console.warn(
@@ -23,6 +24,7 @@ export async function transcribeAudio(
     form.append("file", new File([audioBlob], filename, { type: audioBlob.type }));
     form.append("model", model);
     form.append("response_format", "text");
+    if (prompt) form.append("prompt", prompt);
 
     const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
