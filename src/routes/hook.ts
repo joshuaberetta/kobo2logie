@@ -49,8 +49,9 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding if a URL is configured for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, fields } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
+      forwardToken?: string;
       fields?: string[];
     };
     if (forwardUrl) {
@@ -77,7 +78,8 @@ hook.post("/:formUID", async (c) => {
             global: c.env.KOBO_API_TOKEN_GLOBAL,
             eu: c.env.KOBO_API_TOKEN_EU,
           },
-          jsonPayload
+          jsonPayload,
+          forwardToken || undefined
         )
       );
     }

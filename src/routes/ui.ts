@@ -194,8 +194,8 @@ ui.get("/:uid", (c) => {
     .fields { display: flex; flex-direction: column; gap: 1.25rem; }
     label { display: block; font-size: .85rem; font-weight: 600; color: #444; margin-bottom: .4rem; }
     .label-hint { font-size: .75rem; font-weight: 400; color: #9ca3af; margin-left: .4rem; }
-    input[type="url"] { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .95rem; outline: none; transition: border-color .15s; }
-    input[type="url"]:focus { border-color: #2563eb; }
+    input[type="url"], input[type="text"], input[type="password"] { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .95rem; outline: none; transition: border-color .15s; }
+    input[type="url"]:focus, input[type="text"]:focus, input[type="password"]:focus { border-color: #2563eb; }
 
     /* Tag input */
     .tag-box { display: flex; flex-wrap: wrap; gap: .4rem; padding: .55rem .7rem; border: 1.5px solid #ddd; border-radius: 8px; cursor: text; transition: border-color .15s; min-height: 2.8rem; align-items: flex-start; }
@@ -244,6 +244,10 @@ ui.get("/:uid", (c) => {
         <div>
           <label for="forward-url">Forwarding URL<span class="label-hint">optional — relay submissions to another service</span></label>
           <input id="forward-url" type="url" placeholder="https://your-service.example.com/webhook" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label for="forward-token">Bearer token<span class="label-hint">optional — sent as Authorization: Bearer &lt;token&gt;</span></label>
+          <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
         </div>
       </div>
     </details>
@@ -312,7 +316,8 @@ ui.get("/:uid", (c) => {
         const data = await res.json();
         const fwdUrl = data.forwardUrl ?? '';
         document.getElementById('forward-url').value = fwdUrl;
-        if (fwdUrl) document.getElementById('advanced').open = true;
+        document.getElementById('forward-token').value = data.forwardToken ?? '';
+        if (fwdUrl || data.forwardToken) document.getElementById('advanced').open = true;
         fields = Array.isArray(data.fields) ? data.fields : [];
         renderTags();
       } catch {}
@@ -321,6 +326,7 @@ ui.get("/:uid", (c) => {
     // ── Save ──────────────────────────────────────────────────────────────────
     async function save() {
       const forwardUrl = document.getElementById('forward-url').value.trim();
+      const forwardToken = document.getElementById('forward-token').value.trim();
       // Flush any partially typed tag
       if (tagInput.value.trim()) {
         addTag(tagInput.value);
@@ -333,7 +339,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, fields }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');

@@ -186,16 +186,17 @@ configure.post("/forward", async (c) => {
 configure.get("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
   const raw = await c.env.FORWARD_CONFIG.get(uid);
-  const config = raw ? (JSON.parse(raw) as { forwardUrl?: string; fields?: string[] }) : {};
-  return c.json({ forwardUrl: config.forwardUrl ?? "", fields: config.fields ?? [] });
+  const config = raw ? (JSON.parse(raw) as { forwardUrl?: string; forwardToken?: string; fields?: string[] }) : {};
+  return c.json({ forwardUrl: config.forwardUrl ?? "", forwardToken: config.forwardToken ?? "", fields: config.fields ?? [] });
 });
 
 // ── POST /api/configure/project/:uid ─────────────────────────────────────────
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, fields } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields } = await c.req.json<{
     forwardUrl?: string;
+    forwardToken?: string;
     fields?: string[];
   }>();
 
@@ -215,8 +216,9 @@ configure.post("/project/:uid", async (c) => {
     ? fields.map((f) => String(f).trim()).filter(Boolean)
     : [];
   const safeUrl = forwardUrl?.trim() ?? "";
+  const safeToken = forwardToken?.trim() ?? "";
 
-  if (!safeUrl && safeFields.length === 0) {
+  if (!safeUrl && !safeToken && safeFields.length === 0) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -224,7 +226,7 @@ configure.post("/project/:uid", async (c) => {
     const current = existing ? (JSON.parse(existing) as Record<string, unknown>) : {};
     await c.env.FORWARD_CONFIG.put(
       uid,
-      JSON.stringify({ ...current, forwardUrl: safeUrl, fields: safeFields })
+      JSON.stringify({ ...current, forwardUrl: safeUrl, forwardToken: safeToken, fields: safeFields })
     );
   }
 

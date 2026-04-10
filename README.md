@@ -95,6 +95,7 @@ Expand **Advanced settings** to configure:
 | Setting | Description |
 |---|---|
 | **Forwarding URL** | Optional HTTPS URL to relay every received submission to another service. Leave empty to disable. |
+| **Bearer token** | Optional token sent as `Authorization: Bearer <token>` on each forwarded request. |
 
 Click **Save** to persist the settings. You can return to this page at any time at `/{formUID}`.
 

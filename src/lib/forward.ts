@@ -31,7 +31,8 @@ export async function forwardSubmission(
   forwardUrl: string,
   koboBaseUrl: string,
   tokens: { global: string; eu: string },
-  jsonPayload?: Record<string, unknown>
+  jsonPayload?: Record<string, unknown>,
+  forwardToken?: string
 ): Promise<void> {
   try {
     const attachments = attachmentsToForward(submission, jsonPayload);
@@ -66,8 +67,12 @@ export async function forwardSubmission(
       })
     );
 
+    const fwdHeaders: HeadersInit = {};
+    if (forwardToken) fwdHeaders["Authorization"] = `Bearer ${forwardToken}`;
+
     const fwdRes = await fetch(forwardUrl, {
       method: "POST",
+      headers: fwdHeaders,
       body: form,
     });
 
