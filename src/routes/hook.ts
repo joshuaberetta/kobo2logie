@@ -49,10 +49,11 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding if a URL is configured for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
+      transcribe?: { questions: string[]; model?: string };
     };
     if (forwardUrl) {
       const submission = body as KoboSubmission;
@@ -60,14 +61,22 @@ hook.post("/:formUID", async (c) => {
       // Build a filtered payload if the user has specified a fields subset
       let jsonPayload: Record<string, unknown> | undefined;
       if (fields && fields.length > 0) {
-        jsonPayload = {};
+        const filtered: Record<string, unknown> = {};
         for (const f of fields) {
           if (Object.prototype.hasOwnProperty.call(submission, f)) {
-            (jsonPayload as Record<string, unknown>)[f] =
-              (submission as Record<string, unknown>)[f];
+            filtered[f] = (submission as Record<string, unknown>)[f];
           }
         }
+        if (Object.keys(filtered).length > 0) {
+          jsonPayload = filtered;
+        } else {
+          console.warn(
+            `[hook] None of the configured fields [${fields.join(", ")}] matched the submission keys. Forwarding full submission.`
+          );
+        }
       }
+
+      const openaiApiKey = c.env.OPENAI_API_KEY || undefined;
 
       c.executionCtx.waitUntil(
         forwardSubmission(
@@ -79,7 +88,9 @@ hook.post("/:formUID", async (c) => {
             eu: c.env.KOBO_API_TOKEN_EU,
           },
           jsonPayload,
-          forwardToken || undefined
+          forwardToken || undefined,
+          transcribe || undefined,
+          openaiApiKey
         )
       );
     }

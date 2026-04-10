@@ -203,8 +203,17 @@ ui.get("/:uid", (c) => {
     .tag { display: inline-flex; align-items: center; gap: .3rem; background: #e5e7eb; color: #374151; font-size: .82rem; padding: .2rem .55rem; border-radius: 5px; }
     .tag-remove { background: none; border: none; cursor: pointer; color: #6b7280; font-size: .85rem; line-height: 1; padding: 0 .1rem; }
     .tag-remove:hover { color: #111; }
-    .tag-input { border: none; outline: none; font-size: .9rem; background: transparent; padding: .1rem .1rem; min-width: 120px; flex: 1; color: #1a1a1a; }
+    .tag-input { border: none; outline: none; font-size: .9rem; background: transparent; padding: .4rem .1rem; flex: 1 1 100%; min-width: 0; color: #1a1a1a; }
     .tag-input::placeholder { color: #9ca3af; }
+
+    select { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .95rem; color: #1a1a1a; background: #fff; outline: none; cursor: pointer; }
+    select:focus { border-color: #2563eb; }
+    .checkbox-row { display: flex; align-items: center; gap: .5rem; cursor: pointer; user-select: none; }
+    .checkbox-row input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
+    .checkbox-row span { font-size: .85rem; font-weight: 600; color: #444; }
+    .transcribe-sub { display: flex; flex-direction: column; gap: 1rem; margin-top: .9rem; }
+    .key-preview { font-size: .75rem; color: #6b7280; margin-top: .35rem; line-height: 1.6; }
+    .key-preview code { font-family: monospace; background: #f3f4f6; padding: .1rem .3rem; border-radius: 3px; }
 
     .save-btn { margin-top: .75rem; width: 100%; padding: .7rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background .15s; }
     .save-btn:hover { background: #1d4ed8; }
@@ -248,6 +257,28 @@ ui.get("/:uid", (c) => {
         <div>
           <label for="forward-token">Bearer token<span class="label-hint">optional — sent as Authorization: Bearer &lt;token&gt;</span></label>
           <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label class="checkbox-row" for="transcribe-enabled">
+            <input type="checkbox" id="transcribe-enabled" onchange="toggleTranscribe()" />
+            <span>Transcribe audio</span>
+          </label>
+          <div id="transcribe-sub" class="transcribe-sub" style="display:none">
+            <div>
+              <label>Questions to transcribe<span class="label-hint">question_xpath of each audio field</span></label>
+              <div class="tag-box" id="tq-box" onclick="document.getElementById('tq-input').focus()">
+                <input class="tag-input" id="tq-input" type="text" placeholder="Add question name" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="key-preview" id="tq-preview"></div>
+            </div>
+            <div>
+              <label for="transcribe-model">Model</label>
+              <select id="transcribe-model">
+                <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+                <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     </details>
@@ -308,6 +339,65 @@ ui.get("/:uid", (c) => {
       }
     });
 
+    // ── Transcribe questions tag input ────────────────────────────────────────
+    let transcribeQuestions = [];
+    const tqBox = document.getElementById('tq-box');
+    const tqInput = document.getElementById('tq-input');
+
+    function addTqTag(value) {
+      const trimmed = value.trim().replace(/,+$/, '');
+      if (!trimmed || transcribeQuestions.includes(trimmed)) return;
+      transcribeQuestions.push(trimmed);
+      renderTqTags();
+    }
+
+    function removeTqTag(index) {
+      transcribeQuestions.splice(index, 1);
+      renderTqTags();
+    }
+
+    function renderTqTags() {
+      Array.from(tqBox.querySelectorAll('.tag')).forEach(el => el.remove());
+      transcribeQuestions.forEach((q, i) => {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.innerHTML =
+          escHtml(q) +
+          '<button class="tag-remove" type="button" aria-label="Remove">\u00d7</button>';
+        tag.querySelector('button').addEventListener('click', () => removeTqTag(i));
+        tqBox.insertBefore(tag, tqInput);
+      });
+      const preview = document.getElementById('tq-preview');
+      preview.innerHTML = transcribeQuestions.length > 0
+        ? transcribeQuestions.map(q =>
+            '<code>' + escHtml(q) + '</code> \u2192 <code>' + escHtml(q) + '_transcript</code>'
+          ).join('<br/>')
+        : '';
+    }
+
+    tqInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        addTqTag(tqInput.value);
+        tqInput.value = '';
+      } else if (e.key === 'Backspace' && tqInput.value === '' && transcribeQuestions.length > 0) {
+        transcribeQuestions.pop();
+        renderTqTags();
+      }
+    });
+
+    tqInput.addEventListener('blur', () => {
+      if (tqInput.value.trim()) {
+        addTqTag(tqInput.value);
+        tqInput.value = '';
+      }
+    });
+
+    function toggleTranscribe() {
+      const enabled = document.getElementById('transcribe-enabled').checked;
+      document.getElementById('transcribe-sub').style.display = enabled ? 'flex' : 'none';
+    }
+
     // ── Load current config ───────────────────────────────────────────────────
     async function loadConfig() {
       try {
@@ -320,6 +410,16 @@ ui.get("/:uid", (c) => {
         if (fwdUrl || data.forwardToken) document.getElementById('advanced').open = true;
         fields = Array.isArray(data.fields) ? data.fields : [];
         renderTags();
+        if (data.transcribe && Array.isArray(data.transcribe.questions) && data.transcribe.questions.length > 0) {
+          document.getElementById('transcribe-enabled').checked = true;
+          document.getElementById('transcribe-sub').style.display = 'flex';
+          transcribeQuestions = data.transcribe.questions;
+          renderTqTags();
+          if (data.transcribe.model) {
+            document.getElementById('transcribe-model').value = data.transcribe.model;
+          }
+          document.getElementById('advanced').open = true;
+        }
       } catch {}
     }
 
@@ -332,6 +432,15 @@ ui.get("/:uid", (c) => {
         addTag(tagInput.value);
         tagInput.value = '';
       }
+      // Flush any partially typed transcribe question tag
+      if (tqInput.value.trim()) {
+        addTqTag(tqInput.value);
+        tqInput.value = '';
+      }
+      const transcribeEnabled = document.getElementById('transcribe-enabled').checked;
+      const transcribe = (transcribeEnabled && transcribeQuestions.length > 0)
+        ? { questions: transcribeQuestions, model: document.getElementById('transcribe-model').value }
+        : null;
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
       setStatus('', '');
@@ -339,7 +448,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');

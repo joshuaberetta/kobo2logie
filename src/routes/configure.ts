@@ -186,18 +186,31 @@ configure.post("/forward", async (c) => {
 configure.get("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
   const raw = await c.env.FORWARD_CONFIG.get(uid);
-  const config = raw ? (JSON.parse(raw) as { forwardUrl?: string; forwardToken?: string; fields?: string[] }) : {};
-  return c.json({ forwardUrl: config.forwardUrl ?? "", forwardToken: config.forwardToken ?? "", fields: config.fields ?? [] });
+  const config = raw
+    ? (JSON.parse(raw) as {
+        forwardUrl?: string;
+        forwardToken?: string;
+        fields?: string[];
+        transcribe?: { questions: string[]; model?: string };
+      })
+    : {};
+  return c.json({
+    forwardUrl: config.forwardUrl ?? "",
+    forwardToken: config.forwardToken ?? "",
+    fields: config.fields ?? [],
+    transcribe: config.transcribe ?? null,
+  });
 });
 
 // ── POST /api/configure/project/:uid ─────────────────────────────────────────
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
+    transcribe?: { questions: string[]; model?: string } | null;
   }>();
 
   if (forwardUrl) {
@@ -212,22 +225,46 @@ configure.post("/project/:uid", async (c) => {
     }
   }
 
+  // Validate transcribe config if provided
+  let safeTranscribe: { questions: string[]; model?: string } | undefined;
+  if (transcribe != null) {
+    if (!Array.isArray(transcribe.questions)) {
+      return c.json({ error: "transcribe.questions must be an array" }, 400);
+    }
+    const safeQuestions = transcribe.questions
+      .map((q) => String(q).trim())
+      .filter(Boolean);
+    safeTranscribe = {
+      questions: safeQuestions,
+      ...(transcribe.model ? { model: String(transcribe.model).trim() } : {}),
+    };
+  }
+
   const safeFields = Array.isArray(fields)
     ? fields.map((f) => String(f).trim()).filter(Boolean)
     : [];
   const safeUrl = forwardUrl?.trim() ?? "";
   const safeToken = forwardToken?.trim() ?? "";
 
-  if (!safeUrl && !safeToken && safeFields.length === 0) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
     const existing = await c.env.FORWARD_CONFIG.get(uid);
     const current = existing ? (JSON.parse(existing) as Record<string, unknown>) : {};
-    await c.env.FORWARD_CONFIG.put(
-      uid,
-      JSON.stringify({ ...current, forwardUrl: safeUrl, forwardToken: safeToken, fields: safeFields })
-    );
+    const next: Record<string, unknown> = {
+      ...current,
+      forwardUrl: safeUrl,
+      forwardToken: safeToken,
+      fields: safeFields,
+    };
+    // transcribe: null means "clear", undefined means "don't touch"
+    if (transcribe === null) {
+      delete next.transcribe;
+    } else if (safeTranscribe !== undefined) {
+      next.transcribe = safeTranscribe;
+    }
+    await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }
 
   return c.json({ ok: true });

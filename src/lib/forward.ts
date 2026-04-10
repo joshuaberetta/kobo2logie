@@ -1,5 +1,6 @@
 import { attachmentsToForward } from "./kobo.js";
 import type { KoboSubmission } from "./kobo.js";
+import { transcribeAudio } from "./transcribe.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
@@ -20,8 +21,12 @@ function resolveKoboToken(
  * everything to forwardUrl as multipart/form-data.
  *
  * Parts:
- *   - "submission"              — full submission JSON string
+ *   - "submission"              — full submission JSON string (with transcripts injected)
  *   - "<media_file_basename>"   — one binary File part per referenced, non-deleted image
+ *
+ * If transcribeConfig and openaiApiKey are provided, audio attachments for each
+ * named question are fetched and transcribed; the results are injected into the
+ * submission JSON as "<questionName>_transcript" before forwarding.
  *
  * The correct wfp_logie Kobo token is selected based on koboBaseUrl hostname.
  * All errors are swallowed and logged — this function never throws.
@@ -32,14 +37,64 @@ export async function forwardSubmission(
   koboBaseUrl: string,
   tokens: { global: string; eu: string },
   jsonPayload?: Record<string, unknown>,
-  forwardToken?: string
+  forwardToken?: string,
+  transcribeConfig?: { questions: string[]; model?: string },
+  openaiApiKey?: string
 ): Promise<void> {
   try {
-    const attachments = attachmentsToForward(submission, jsonPayload);
     const token = resolveKoboToken(koboBaseUrl, tokens);
 
+    // Build the working payload; we may mutate it with transcript keys below.
+    const payload: Record<string, unknown> = jsonPayload ? { ...jsonPayload } : { ...submission };
+
+    // ── Transcription ──────────────────────────────────────────────────────
+    if (transcribeConfig && openaiApiKey && transcribeConfig.questions.length > 0) {
+      // Build a lookup map: question_xpath → attachment
+      const audioByXpath = new Map(
+        (submission._attachments ?? [])
+          .filter((a) => !a.is_deleted && a.mimetype.startsWith("audio/"))
+          .map((a) => [a.question_xpath, a])
+      );
+
+      await Promise.all(
+        transcribeConfig.questions.map(async (questionName) => {
+          const att = audioByXpath.get(questionName);
+          if (!att) {
+            console.warn(`[transcribe] No audio attachment found for question_xpath "${questionName}"`);
+            return;
+          }
+          try {
+            const res = await fetch(att.download_url, {
+              headers: { Authorization: `Token ${token}` },
+            });
+            if (!res.ok) {
+              console.error(
+                `[transcribe] Failed to fetch audio for "${questionName}": HTTP ${res.status}`
+              );
+              return;
+            }
+            const blob = await res.blob();
+            const transcript = await transcribeAudio(
+              blob,
+              att.media_file_basename,
+              openaiApiKey,
+              transcribeConfig.model
+            );
+            if (transcript) {
+              payload[`${questionName}_transcript`] = transcript;
+            }
+          } catch (err) {
+            console.error(`[transcribe] Error transcribing "${questionName}":`, err);
+          }
+        })
+      );
+    }
+
+    // ── Attachment fetch & forward ─────────────────────────────────────────
+    const attachments = attachmentsToForward(submission, jsonPayload);
+
     const form = new FormData();
-    form.append("submission", JSON.stringify(jsonPayload ?? submission));
+    form.append("submission", JSON.stringify(payload));
 
     await Promise.all(
       attachments.map(async (att) => {

@@ -6,4 +6,5 @@ export interface Env {
   MAX_BODY_BYTES: string;
   KOBO_API_TOKEN_GLOBAL: string;
   KOBO_API_TOKEN_EU: string;
+  OPENAI_API_KEY: string;
 }
