@@ -199,6 +199,7 @@ configure.get("/project/:uid", async (c) => {
         fields?: string[];
         transcribe?: { questions: string[]; model?: string; prompt?: string };
         describe?: { questions: string[]; model?: string; prompt?: string };
+        forwardMedia?: string[];
       })
     : {};
   return c.json({
@@ -208,6 +209,7 @@ configure.get("/project/:uid", async (c) => {
     fields: config.fields ?? [],
     transcribe: config.transcribe ?? null,
     describe: config.describe ?? null,
+    forwardMedia: config.forwardMedia ?? null,
   });
 });
 
@@ -215,12 +217,13 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, describe } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string } | null;
     describe?: { questions: string[]; model?: string; prompt?: string } | null;
+    forwardMedia?: string[] | null;
   }>();
 
   if (forwardUrl) {
@@ -272,8 +275,12 @@ configure.post("/project/:uid", async (c) => {
     : [];
   const safeUrl = forwardUrl?.trim() ?? "";
   const safeToken = forwardToken?.trim() ?? "";
+  const ALLOWED_MEDIA = new Set(["image", "audio", "video", "application"]);
+  const safeForwardMedia = Array.isArray(forwardMedia)
+    ? forwardMedia.map((m) => String(m).trim()).filter((m) => ALLOWED_MEDIA.has(m))
+    : null;
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeForwardMedia === null) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -296,6 +303,12 @@ configure.post("/project/:uid", async (c) => {
       delete next.describe;
     } else if (safeDescribe !== undefined) {
       next.describe = safeDescribe;
+    }
+    // forwardMedia: null = forward all (clear restriction), array = restrict
+    if (forwardMedia === null) {
+      delete next.forwardMedia;
+    } else if (safeForwardMedia !== null) {
+      next.forwardMedia = safeForwardMedia;
     }
     await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }

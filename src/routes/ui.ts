@@ -270,6 +270,15 @@ ui.get("/:uid", (c) => {
           <label for="describe-prompt">Image description instruction<span class="label-hint">optional — prompt sent to OpenAI with each image</span></label>
           <textarea id="describe-prompt" rows="2" placeholder="e.g. Describe this image concisely and factually. Focus on visible damage, location features, and any text present."></textarea>
         </div>
+        <div>
+          <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
+          <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
+            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
+            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="audio" /><span>Audio</span></label>
+            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="video" /><span>Video</span></label>
+            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="application" /><span>Files (PDF, etc.)</span></label>
+          </div>
+        </div>
       </div>
     </details>
 
@@ -493,6 +502,12 @@ ui.get("/:uid", (c) => {
           document.getElementById('describe-prompt').value = data.describe.prompt;
           document.getElementById('advanced').open = true;
         }
+        if (Array.isArray(data.forwardMedia) && data.forwardMedia.length > 0) {
+          document.querySelectorAll('input[name="fwd-media"]').forEach(cb => {
+            cb.checked = data.forwardMedia.includes(cb.value);
+          });
+          document.getElementById('advanced').open = true;
+        }
         configFields = Array.isArray(data.fields) ? data.fields : [];
         if (data.transcribe && Array.isArray(data.transcribe.questions) && data.transcribe.questions.length > 0) {
           configTranscribeQs = data.transcribe.questions;
@@ -511,6 +526,9 @@ ui.get("/:uid", (c) => {
     async function save() {
       const forwardUrl = document.getElementById('forward-url').value.trim();
       const forwardToken = document.getElementById('forward-token').value.trim();
+      const checkedMedia = Array.from(document.querySelectorAll('input[name="fwd-media"]:checked')).map(cb => cb.value);
+      // null = forward all; array = restrict to checked types
+      const forwardMedia = checkedMedia.length > 0 ? checkedMedia : null;
       const selected = getSelectedFields();
       // Empty array = forward all; treat "every question checked" as "all"
       const fields = (allQuestions.length > 0 && selected.length === allQuestions.length) ? [] : selected;
@@ -533,7 +551,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');

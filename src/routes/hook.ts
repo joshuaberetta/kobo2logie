@@ -49,12 +49,13 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding if a URL is configured for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, describe } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
-      transcribe?: { questions: string[]; model?: string };
+      transcribe?: { questions: string[]; model?: string; prompt?: string };
       describe?: { questions: string[]; model?: string; prompt?: string };
+      forwardMedia?: string[];
     };
     if (forwardUrl) {
       const submission = body as KoboSubmission;
@@ -92,7 +93,8 @@ hook.post("/:formUID", async (c) => {
           forwardToken || undefined,
           transcribe || undefined,
           openaiApiKey,
-          describe || undefined
+          describe || undefined,
+          forwardMedia || undefined
         )
       );
     }

@@ -45,7 +45,8 @@ export async function forwardSubmission(
   forwardToken?: string,
   transcribeConfig?: { questions: string[]; model?: string; prompt?: string },
   openaiApiKey?: string,
-  describeConfig?: { questions: string[]; model?: string; prompt?: string }
+  describeConfig?: { questions: string[]; model?: string; prompt?: string },
+  forwardMedia?: string[]
 ): Promise<void> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
@@ -141,7 +142,14 @@ export async function forwardSubmission(
     }
 
     // ── Attachment fetch & forward ─────────────────────────────────────────
-    const attachments = attachmentsToForward(submission, jsonPayload);
+    let attachments = attachmentsToForward(submission, jsonPayload);
+
+    // Filter by allowed media types if the user has restricted forwarding
+    if (forwardMedia && forwardMedia.length > 0) {
+      attachments = attachments.filter((a) =>
+        forwardMedia.some((prefix) => a.mimetype.startsWith(prefix + "/"))
+      );
+    }
 
     const form = new FormData();
     form.append("submission", JSON.stringify(payload));
