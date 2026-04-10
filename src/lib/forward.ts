@@ -43,7 +43,7 @@ export async function forwardSubmission(
   tokens: { global: string; eu: string },
   jsonPayload?: Record<string, unknown>,
   forwardToken?: string,
-  transcribeConfig?: { questions: string[]; model?: string; prompt?: string },
+  transcribeConfig?: { questions: string[]; model?: string; prompt?: string; translateTo?: string },
   openaiApiKey?: string,
   describeConfig?: { questions: string[]; model?: string; prompt?: string },
   forwardMedia?: string[]
@@ -89,7 +89,39 @@ export async function forwardSubmission(
               transcribeConfig.prompt
             );
             if (transcript) {
-              payload[`${questionName}_transcript`] = transcript;
+              // Optionally translate the transcript into a target language
+              let finalText = transcript;
+              if (transcribeConfig.translateTo) {
+                try {
+                  const tlRes = await fetch("https://api.openai.com/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${openaiApiKey}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      model: "gpt-4o-mini",
+                      messages: [
+                        {
+                          role: "system",
+                          content: `Translate the following text to ${transcribeConfig.translateTo}. Return only the translated text, no explanation.`,
+                        },
+                        { role: "user", content: transcript },
+                      ],
+                      max_tokens: 1024,
+                    }),
+                  });
+                  if (tlRes.ok) {
+                    const tlData = await tlRes.json<{ choices?: Array<{ message?: { content?: string } }> }>();
+                    finalText = tlData.choices?.[0]?.message?.content?.trim() ?? transcript;
+                  } else {
+                    console.error(`[transcribe] Translation failed for "${questionName}": HTTP ${tlRes.status}`);
+                  }
+                } catch (err) {
+                  console.error(`[transcribe] Translation error for "${questionName}":`, err);
+                }
+              }
+              payload[`${questionName}_transcript`] = finalText;
             }
           } catch (err) {
             console.error(`[transcribe] Error transcribing "${questionName}":`, err);

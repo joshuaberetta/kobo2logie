@@ -267,6 +267,29 @@ ui.get("/:uid", (c) => {
           <textarea id="transcribe-prompt" rows="2" placeholder="e.g. The speaker may use field-specific terminology such as GPS coordinates and village names."></textarea>
         </div>
         <div>
+          <label for="transcribe-translate">Translate transcript to<span class="label-hint">optional — translate every transcript into this language</span></label>
+          <select id="transcribe-translate">
+            <option value="">No translation</option>
+            <option value="English">English</option>
+            <option value="French">French</option>
+            <option value="Spanish">Spanish</option>
+            <option value="Arabic">Arabic</option>
+            <option value="Portuguese">Portuguese</option>
+            <option value="Russian">Russian</option>
+            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+            <option value="Turkish">Turkish</option>
+            <option value="German">German</option>
+            <option value="Italian">Italian</option>
+            <option value="Ukrainian">Ukrainian</option>
+            <option value="Swahili">Swahili</option>
+            <option value="Hausa">Hausa</option>
+            <option value="Somali">Somali</option>
+            <option value="Dari">Dari</option>
+            <option value="Pashto">Pashto</option>
+            <option value="Burmese">Burmese</option>
+          </select>
+        </div>
+        <div>
           <label for="describe-prompt">Image description instruction<span class="label-hint">optional — prompt sent to OpenAI with each image</span></label>
           <textarea id="describe-prompt" rows="2" placeholder="e.g. Describe this image concisely and factually. Focus on visible damage, location features, and any text present."></textarea>
         </div>
@@ -498,6 +521,10 @@ ui.get("/:uid", (c) => {
           document.getElementById('transcribe-prompt').value = data.transcribe.prompt;
           document.getElementById('advanced').open = true;
         }
+        if (data.transcribe?.translateTo) {
+          document.getElementById('transcribe-translate').value = data.transcribe.translateTo;
+          document.getElementById('advanced').open = true;
+        }
         if (data.describe?.prompt) {
           document.getElementById('describe-prompt').value = data.describe.prompt;
           document.getElementById('advanced').open = true;
@@ -535,8 +562,13 @@ ui.get("/:uid", (c) => {
       const transcribeEnabled = document.getElementById('transcribe-enabled').checked;
       const selectedAudio = getSelectedAudioQs();
       const transcribePrompt = document.getElementById('transcribe-prompt').value.trim();
+      const transcribeTranslate = document.getElementById('transcribe-translate').value.trim();
       const transcribe = (transcribeEnabled && selectedAudio.length > 0)
-        ? { questions: selectedAudio, ...(transcribePrompt ? { prompt: transcribePrompt } : {}) }
+        ? {
+            questions: selectedAudio,
+            ...(transcribePrompt ? { prompt: transcribePrompt } : {}),
+            ...(transcribeTranslate ? { translateTo: transcribeTranslate } : {}),
+          }
         : null;
       const describeEnabled = document.getElementById('describe-enabled').checked;
       const selectedImages = getSelectedImageQs();

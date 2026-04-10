@@ -197,7 +197,7 @@ configure.get("/project/:uid", async (c) => {
         forwardUrl?: string;
         forwardToken?: string;
         fields?: string[];
-        transcribe?: { questions: string[]; model?: string; prompt?: string };
+        transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
         describe?: { questions: string[]; model?: string; prompt?: string };
         forwardMedia?: string[];
       })
@@ -221,7 +221,7 @@ configure.post("/project/:uid", async (c) => {
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
-    transcribe?: { questions: string[]; model?: string; prompt?: string } | null;
+    transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
     describe?: { questions: string[]; model?: string; prompt?: string } | null;
     forwardMedia?: string[] | null;
   }>();
@@ -239,7 +239,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate transcribe config if provided
-  let safeTranscribe: { questions: string[]; model?: string } | undefined;
+  let safeTranscribe: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | undefined;
   if (transcribe != null) {
     if (!Array.isArray(transcribe.questions)) {
       return c.json({ error: "transcribe.questions must be an array" }, 400);
@@ -251,6 +251,7 @@ configure.post("/project/:uid", async (c) => {
       questions: safeQuestions,
       ...(transcribe.model ? { model: String(transcribe.model).trim() } : {}),
       ...(transcribe.prompt ? { prompt: String(transcribe.prompt).trim() } : {}),
+      ...(transcribe.translateTo ? { translateTo: String(transcribe.translateTo).trim() } : {}),
     };
   }
 
