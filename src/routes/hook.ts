@@ -49,13 +49,14 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding if a URL is configured for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia, appendValues } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
       transcribe?: { questions: string[]; model?: string; prompt?: string };
       describe?: { questions: string[]; model?: string; prompt?: string };
       forwardMedia?: string[];
+      appendValues?: Array<{ key: string; value: string }>;
     };
     if (forwardUrl) {
       const submission = body as KoboSubmission;
@@ -78,6 +79,18 @@ hook.post("/:formUID", async (c) => {
             `[hook] None of the configured fields [${fields.join(", ")}] matched the submission keys. Forwarding full submission.`
           );
         }
+      }
+
+      // Inject configured key-value pairs under _metadata in the forwarded payload
+      if (appendValues && appendValues.length > 0) {
+        const meta: Record<string, string> = {};
+        for (const { key, value } of appendValues) {
+          meta[key] = value;
+        }
+        if (!jsonPayload) {
+          jsonPayload = { ...(submission as Record<string, unknown>) };
+        }
+        jsonPayload._metadata = meta;
       }
 
       const openaiApiKey = c.env.OPENAI_API_KEY || undefined;

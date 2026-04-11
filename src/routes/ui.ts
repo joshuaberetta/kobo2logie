@@ -285,6 +285,15 @@ ui.get("/:uid", (c) => {
     .advanced-body { padding: .75rem .9rem 1rem; border-top: 1.5px solid #e5e7eb; display: flex; flex-direction: column; gap: 1.25rem; }
     textarea { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .88rem; font-family: inherit; color: #1a1a1a; outline: none; resize: vertical; transition: border-color .15s; box-sizing: border-box; }
     textarea:focus { border-color: #2563eb; }
+    .kv-editor { display: flex; flex-direction: column; gap: .4rem; }
+    .kv-row { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .4rem; align-items: center; }
+    .kv-row input { min-width: 0; }
+    .kv-remove { background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: 1rem; color: #9ca3af; cursor: pointer; padding: .25rem .45rem; line-height: 1; }
+    .kv-remove:hover { border-color: #fca5a5; color: #dc2626; }
+    .kv-add { background: none; border: 1.5px dashed #d1d5db; border-radius: 6px; font-size: .8rem; font-weight: 600; color: #6b7280; cursor: pointer; padding: .35rem .6rem; align-self: flex-start; margin-top: .15rem; }
+    .kv-add:hover { border-color: #9ca3af; color: #374151; }
+    .kv-col-headers { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .4rem; padding-bottom: .1rem; }
+    .kv-col-header { font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
   </style>
 </head>
 <body>
@@ -311,6 +320,12 @@ ui.get("/:uid", (c) => {
         <div>
           <label for="forward-token">Bearer token<span class="label-hint">optional — sent as Authorization: Bearer &lt;token&gt;</span></label>
           <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label>Append to payload<span class="label-hint">static key-value pairs added under <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_metadata</code> in the forwarded JSON — e.g. context=mozambique</span></label>
+          <div class="kv-col-headers"><span class="kv-col-header">Key</span><span class="kv-col-header">Value</span><span></span></div>
+          <div class="kv-editor" id="kv-editor"></div>
+          <button type="button" class="kv-add" onclick="addKVRow()">+ Add field</button>
         </div>
         <div>
           <label for="transcribe-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Transcription instruction<span class="label-hint">optional — context hint sent to OpenAI to guide transcription</span></label>
@@ -494,6 +509,29 @@ ui.get("/:uid", (c) => {
       }
     }
 
+    // ── Key-value editor for payload append ──────────────────────────────────
+    function kvRowHtml(key, value) {
+      return '<div class="kv-row">' +
+        '<input type="text" class="kv-key" placeholder="key" value="' + escHtml(key ?? '') + '" autocomplete="off" spellcheck="false" />' +
+        '<input type="text" class="kv-val" placeholder="value" value="' + escHtml(value ?? '') + '" autocomplete="off" spellcheck="false" />' +
+        '<button type="button" class="kv-remove" onclick="this.parentElement.remove()" title="Remove">&times;</button>' +
+        '</div>';
+    }
+    function renderKVEditor(pairs) {
+      document.getElementById('kv-editor').innerHTML = (pairs || []).map(function(p) { return kvRowHtml(p.key, p.value); }).join('');
+    }
+    function addKVRow() {
+      document.getElementById('kv-editor').insertAdjacentHTML('beforeend', kvRowHtml('', ''));
+    }
+    function getAppendValues() {
+      return Array.from(document.querySelectorAll('#kv-editor .kv-row')).reduce(function(acc, row) {
+        var key = row.querySelector('.kv-key').value.trim();
+        var value = row.querySelector('.kv-val').value.trim();
+        if (key) acc.push({ key: key, value: value });
+        return acc;
+      }, []);
+    }
+
     // ── Load current config ───────────────────────────────────────────────────
     async function loadConfig() {
       try {
@@ -524,6 +562,7 @@ ui.get("/:uid", (c) => {
         if (data.describe && Array.isArray(data.describe.questions)) {
           configDescribeQs = data.describe.questions;
         }
+        renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
       } catch {}
     }
 
@@ -531,6 +570,7 @@ ui.get("/:uid", (c) => {
     async function save() {
       const forwardUrl = document.getElementById('forward-url').value.trim();
       const forwardToken = document.getElementById('forward-token').value.trim();
+      const appendValues = getAppendValues();
       const checkedMedia = Array.from(document.querySelectorAll('input[name="fwd-media"]:checked')).map(cb => cb.value);
       // null = forward all; array = restrict to checked types
       const forwardMedia = checkedMedia.length > 0 ? checkedMedia : null;
@@ -560,7 +600,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia, appendValues }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');

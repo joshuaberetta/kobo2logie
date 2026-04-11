@@ -200,6 +200,7 @@ configure.get("/project/:uid", async (c) => {
         transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
         describe?: { questions: string[]; model?: string; prompt?: string };
         forwardMedia?: string[];
+        appendValues?: Array<{ key: string; value: string }>;
       })
     : {};
   return c.json({
@@ -210,6 +211,7 @@ configure.get("/project/:uid", async (c) => {
     transcribe: config.transcribe ?? null,
     describe: config.describe ?? null,
     forwardMedia: config.forwardMedia ?? null,
+    appendValues: config.appendValues ?? [],
   });
 });
 
@@ -217,13 +219,14 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia, appendValues } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
     describe?: { questions: string[]; model?: string; prompt?: string } | null;
     forwardMedia?: string[] | null;
+    appendValues?: Array<{ key: string; value: string }> | null;
   }>();
 
   if (forwardUrl) {
@@ -281,7 +284,18 @@ configure.post("/project/:uid", async (c) => {
     ? forwardMedia.map((m) => String(m).trim()).filter((m) => ALLOWED_MEDIA.has(m))
     : null;
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeForwardMedia === null) {
+  let safeAppendValues: Array<{ key: string; value: string }> | undefined;
+  if (appendValues != null) {
+    if (!Array.isArray(appendValues)) {
+      return c.json({ error: "appendValues must be an array" }, 400);
+    }
+    safeAppendValues = appendValues
+      .filter((e) => e && typeof e.key === "string" && typeof e.value === "string")
+      .map((e) => ({ key: String(e.key).trim(), value: String(e.value).trim() }))
+      .filter((e) => e.key.length > 0);
+  }
+
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0)) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -310,6 +324,14 @@ configure.post("/project/:uid", async (c) => {
       delete next.forwardMedia;
     } else if (safeForwardMedia !== null) {
       next.forwardMedia = safeForwardMedia;
+    }
+    // appendValues: empty = clear, entries = set
+    if (appendValues !== undefined) {
+      if (safeAppendValues && safeAppendValues.length > 0) {
+        next.appendValues = safeAppendValues;
+      } else {
+        delete next.appendValues;
+      }
     }
     await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }
