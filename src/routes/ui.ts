@@ -225,7 +225,7 @@ ui.get("/:uid", (c) => {
     .q-row:hover { background: #f9fafb; }
     .q-row input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
     .q-include { display: flex; align-items: center; gap: .4rem; flex: 1; min-width: 0; cursor: pointer; overflow: hidden; }
-    .q-label { font-weight: 500; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-label { font-weight: 500; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .q-xpath { font-family: monospace; font-size: .74rem; color: #9ca3af; flex-shrink: 0; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .q-badge { font-size: .65rem; font-weight: 700; letter-spacing: .04em; padding: .1rem .35rem; border-radius: 4px; flex-shrink: 0; width: 3.2rem; text-align: center; }
     .q-badge--audio { background: #fef3c7; color: #92400e; }
@@ -417,10 +417,10 @@ ui.get("/:uid", (c) => {
   </div>
 
   <div class="modal-overlay" id="prompt-modal" onclick="closeQPromptModal(event)">
-    <div class="modal" style="max-width:480px">
+    <div class="modal" style="max-width:520px">
       <div class="modal-header">
         <span class="modal-title" id="prompt-modal-title">Analysis instructions</span>
-        <button type="button" class="modal-close" onclick="document.getElementById('prompt-modal').classList.remove('open')">&times;</button>
+        <button type="button" class="modal-close" onclick="closePromptModal()">&times;</button>
       </div>
       <div class="modal-body" style="gap:1rem">
         <div class="modal-row">
@@ -428,11 +428,21 @@ ui.get("/:uid", (c) => {
           <span class="modal-value" id="prompt-modal-question"></span>
         </div>
         <div>
-          <label for="prompt-modal-text" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Instructions<span class="label-hint">what to extract — use Kobo question xpaths as key names</span></label>
-          <textarea id="prompt-modal-text" rows="4" placeholder="e.g. Extract names of people, locations, and organizations. Use keys: group1/people, group1/locations, group1/orgs"></textarea>
+          <label for="prompt-modal-description" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Context<span class="label-hint">optional — describe what the content is so the model knows what it's looking at</span></label>
+          <textarea id="prompt-modal-description" rows="2" placeholder="e.g. This image is a business card. The audio is a field interview recorded outdoors."></textarea>
+        </div>
+        <div>
+          <label style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.5rem;display:block">Output fields<span class="label-hint">each row defines one field written back to the submission</span></label>
+          <div class="kv-col-headers">
+            <span class="kv-col-header">Key (field name)</span>
+            <span class="kv-col-header">What to extract</span>
+            <span></span>
+          </div>
+          <div class="kv-editor" id="prompt-modal-fields"></div>
+          <button type="button" class="kv-add" onclick="addPromptField()">+ Add field</button>
         </div>
         <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
-          <button type="button" class="select-btn" onclick="document.getElementById('prompt-modal').classList.remove('open')">Cancel</button>
+          <button type="button" class="select-btn" onclick="closePromptModal()">Cancel</button>
           <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveQPrompt()">Save</button>
         </div>
       </div>
@@ -449,7 +459,7 @@ ui.get("/:uid", (c) => {
     let configAnalyzeAudioQs = []; // persisted analyzeAudio xpath list
     let configExtractTextQs = []; // persisted extractText xpath list
 
-    // Per-question analysis prompts (type → xpath → prompt string)
+    // Per-question analysis prompts (type → xpath → {description?: string, fields: [{key, instruction}]})
     const questionPrompts = { extract: {}, analyzeAudio: {}, extractText: {} };
 
     // Current state for the prompt modal
@@ -492,7 +502,8 @@ ui.get("/:uid", (c) => {
           const analyzeOn = configAnalyzeAudioQs.includes(q.xpath);
           const tPressed = (configTranscribeQs.includes(q.xpath) || analyzeOn) ? 'true' : 'false';
           const aPressed = analyzeOn ? 'true' : 'false';
-          const aHasPrompt = !!questionPrompts.analyzeAudio[q.xpath];
+          const aFields = questionPrompts.analyzeAudio[q.xpath];
+          const aHasPrompt = !!(aFields && (aFields.description || (Array.isArray(aFields.fields) && aFields.fields.length > 0)));
           pills = '<div class="q-pills">' +
             '<button type="button" class="q-pill" aria-pressed="' + tPressed + '" data-feature="transcribe" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Transcribe</button>' +
             '<button type="button" class="q-pill" aria-pressed="' + aPressed + '" data-feature="analyze" data-type="analyzeAudio" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
@@ -501,7 +512,8 @@ ui.get("/:uid", (c) => {
         } else if (q.type === 'image' || q.type === 'photo') {
           badge = '<span class="q-badge q-badge--image">IMAGE</span>';
           const ePressed = configExtractQs.includes(q.xpath) ? 'true' : 'false';
-          const eHasPrompt = !!questionPrompts.extract[q.xpath];
+          const eFields = questionPrompts.extract[q.xpath];
+          const eHasPrompt = !!(eFields && (eFields.description || (Array.isArray(eFields.fields) && eFields.fields.length > 0)));
           pills = '<div class="q-pills">' +
             '<button type="button" class="q-pill" aria-pressed="' + ePressed + '" data-feature="analyze" data-type="extract" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
             '<button type="button" class="q-prompt-btn' + (eHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="extract" data-xpath="' + escHtml(q.xpath) + '" title="' + (eHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
@@ -509,7 +521,8 @@ ui.get("/:uid", (c) => {
         } else if (q.type === 'text') {
           badge = '<span class="q-badge q-badge--text">TEXT</span>';
           const tPressed = configExtractTextQs.includes(q.xpath) ? 'true' : 'false';
-          const tHasPrompt = !!questionPrompts.extractText[q.xpath];
+          const tFields = questionPrompts.extractText[q.xpath];
+          const tHasPrompt = !!(tFields && (tFields.description || (Array.isArray(tFields.fields) && tFields.fields.length > 0)));
           pills = '<div class="q-pills">' +
             '<button type="button" class="q-pill" aria-pressed="' + tPressed + '" data-feature="analyze" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
             '<button type="button" class="q-prompt-btn' + (tHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '" title="' + (tHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
@@ -545,6 +558,20 @@ ui.get("/:uid", (c) => {
     }
 
     // ── Per-question prompt modal ─────────────────────────────────────────────
+    function promptFieldRowHtml(key, instruction) {
+      return '<div class="kv-row">' +
+        '<input type="text" class="pf-key" placeholder="e.g. group1/person_name" value="' + escHtml(key ?? '') + '" autocomplete="off" spellcheck="false" />' +
+        '<input type="text" class="pf-desc" placeholder="what to extract" value="' + escHtml(instruction ?? '') + '" autocomplete="off" spellcheck="false" />' +
+        '<button type="button" class="kv-remove" onclick="this.parentElement.remove()" title="Remove">&times;</button>' +
+        '</div>';
+    }
+
+    function addPromptField() {
+      const container = document.getElementById('prompt-modal-fields');
+      container.insertAdjacentHTML('beforeend', promptFieldRowHtml('', ''));
+      container.querySelector('.kv-row:last-child .pf-key')?.focus();
+    }
+
     function openPromptModal(xpath, type) {
       _promptXpath = xpath;
       _promptType = type;
@@ -552,26 +579,38 @@ ui.get("/:uid", (c) => {
       document.getElementById('prompt-modal-question').textContent = q ? q.label + (q.label !== xpath ? ' (' + xpath + ')' : '') : xpath;
       const typeLabels = { extract: 'Analyze (image)', analyzeAudio: 'Analyze (audio)', extractText: 'Analyze (text)' };
       document.getElementById('prompt-modal-title').textContent = (typeLabels[type] || type) + ' instructions';
-      document.getElementById('prompt-modal-text').value = questionPrompts[type][xpath] || '';
+      const stored = questionPrompts[type][xpath] || {};
+      document.getElementById('prompt-modal-description').value = stored.description || '';
+      const fields = stored.fields || [];
+      const container = document.getElementById('prompt-modal-fields');
+      container.innerHTML = fields.map(f => promptFieldRowHtml(f.key, f.instruction)).join('');
+      if (fields.length === 0) container.insertAdjacentHTML('beforeend', promptFieldRowHtml('', ''));
       document.getElementById('prompt-modal').classList.add('open');
-      document.getElementById('prompt-modal-text').focus();
+      document.getElementById('prompt-modal-description').focus();
     }
 
     function saveQPrompt() {
       if (!_promptXpath || !_promptType) return;
-      const text = document.getElementById('prompt-modal-text').value.trim();
-      if (text) {
-        questionPrompts[_promptType][_promptXpath] = text;
+      const description = document.getElementById('prompt-modal-description').value.trim();
+      const fields = Array.from(document.querySelectorAll('#prompt-modal-fields .kv-row')).reduce(function(acc, row) {
+        const key = row.querySelector('.pf-key').value.trim();
+        const instruction = row.querySelector('.pf-desc').value.trim();
+        if (key) acc.push({ key, instruction });
+        return acc;
+      }, []);
+      if (description || fields.length > 0) {
+        questionPrompts[_promptType][_promptXpath] = { ...(description ? { description } : {}), fields };
       } else {
         delete questionPrompts[_promptType][_promptXpath];
       }
       document.getElementById('prompt-modal').classList.remove('open');
-      // Update just the prompt button for this question without re-rendering the whole list
+      // Targeted DOM update — avoid re-rendering the whole list
       const promptBtn = document.querySelector(
         '#fields-list .q-prompt-btn[data-type="' + CSS.escape(_promptType) + '"][data-xpath="' + CSS.escape(_promptXpath) + '"]'
       );
       if (promptBtn) {
-        const hasPrompt = !!questionPrompts[_promptType][_promptXpath];
+        const stored = questionPrompts[_promptType][_promptXpath];
+        const hasPrompt = !!(stored && (stored.description || (Array.isArray(stored.fields) && stored.fields.length > 0)));
         promptBtn.classList.toggle('has-prompt', hasPrompt);
         promptBtn.title = hasPrompt ? 'Edit instructions (set)' : 'Add instructions';
       }
@@ -580,11 +619,15 @@ ui.get("/:uid", (c) => {
       markDirty();
     }
 
-    function closeQPromptModal(e) {
-      if (e && e.target !== document.getElementById('prompt-modal')) return;
+    function closePromptModal() {
       document.getElementById('prompt-modal').classList.remove('open');
       _promptXpath = null;
       _promptType = null;
+    }
+
+    function closeQPromptModal(e) {
+      if (e && e.target !== document.getElementById('prompt-modal')) return;
+      closePromptModal();
     }
 
     function selectAllFields() {
@@ -776,17 +819,17 @@ ui.get("/:uid", (c) => {
           }
         : null;
       const selectedExtract = getSelectedExtractQs();
-      const extractPrompts = selectedExtract.reduce((a, x) => { if (questionPrompts.extract[x]) a[x] = questionPrompts.extract[x]; return a; }, {});
+      const extractPrompts = selectedExtract.reduce((a, x) => { const f = questionPrompts.extract[x]; if (f && (f.description || (Array.isArray(f.fields) && f.fields.length > 0))) a[x] = f; return a; }, {});
       const extract = selectedExtract.length > 0
         ? { questions: selectedExtract, ...(Object.keys(extractPrompts).length > 0 ? { prompts: extractPrompts } : {}) }
         : null;
       const selectedAnalyzeAudio = getSelectedAnalyzeAudioQs();
-      const analyzeAudioPrompts = selectedAnalyzeAudio.reduce((a, x) => { if (questionPrompts.analyzeAudio[x]) a[x] = questionPrompts.analyzeAudio[x]; return a; }, {});
+      const analyzeAudioPrompts = selectedAnalyzeAudio.reduce((a, x) => { const f = questionPrompts.analyzeAudio[x]; if (f && (f.description || (Array.isArray(f.fields) && f.fields.length > 0))) a[x] = f; return a; }, {});
       const analyzeAudio = selectedAnalyzeAudio.length > 0
         ? { questions: selectedAnalyzeAudio, ...(Object.keys(analyzeAudioPrompts).length > 0 ? { prompts: analyzeAudioPrompts } : {}) }
         : null;
       const selectedExtractText = getSelectedExtractTextQs();
-      const extractTextPrompts = selectedExtractText.reduce((a, x) => { if (questionPrompts.extractText[x]) a[x] = questionPrompts.extractText[x]; return a; }, {});
+      const extractTextPrompts = selectedExtractText.reduce((a, x) => { const f = questionPrompts.extractText[x]; if (f && (f.description || (Array.isArray(f.fields) && f.fields.length > 0))) a[x] = f; return a; }, {});
       const extractText = selectedExtractText.length > 0
         ? { questions: selectedExtractText, ...(Object.keys(extractTextPrompts).length > 0 ? { prompts: extractTextPrompts } : {}) }
         : null;

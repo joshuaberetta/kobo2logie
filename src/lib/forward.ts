@@ -7,6 +7,29 @@ import { extractTextFields } from "./extractText.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
+type PromptField = { key: string; instruction: string };
+type PromptEntry = { description?: string; fields: PromptField[] };
+type PromptMap = Record<string, PromptEntry>;
+
+/**
+ * Converts structured output-field definitions into a plain-text prompt for the LLM.
+ * Prepends an optional global description/context before the field list.
+ */
+function buildPromptFromFields(stored: PromptEntry): string {
+  const parts: string[] = [];
+  if (stored.description?.trim()) parts.push(stored.description.trim());
+  const lines = stored.fields
+    .filter((f) => f.key.trim())
+    .map((f) => (f.instruction.trim() ? `- ${f.key}: ${f.instruction}` : `- ${f.key}`));
+  if (lines.length > 0) {
+    parts.push(
+      "Extract the following fields and return them as a JSON object with exactly these keys:\n" +
+      lines.join("\n")
+    );
+  }
+  return parts.join("\n\n");
+}
+
 export interface ForwardResult {
   ok: boolean;
   httpStatus?: number;
@@ -53,9 +76,9 @@ export async function forwardSubmission(
   transcribeConfig?: { questions: string[]; model?: string; prompt?: string; translateTo?: string },
   openaiApiKey?: string,
   forwardMedia?: string[],
-  extractConfig?: { questions: string[]; model?: string; prompts?: Record<string, string> },
-  analyzeAudioConfig?: { questions: string[]; model?: string; prompts?: Record<string, string> },
-  extractTextConfig?: { questions: string[]; model?: string; prompts?: Record<string, string> }
+  extractConfig?: { questions: string[]; model?: string; prompts?: PromptMap },
+  analyzeAudioConfig?: { questions: string[]; model?: string; prompts?: PromptMap },
+  extractTextConfig?: { questions: string[]; model?: string; prompts?: PromptMap }
 ): Promise<ForwardResult> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
@@ -177,11 +200,14 @@ export async function forwardSubmission(
 
             if (!transcript) return;
 
+            const analyzeAudioFields = analyzeAudioConfig.prompts?.[questionName];
             const analyzed = await analyzeAudioText(
               transcript,
               openaiApiKey,
               analyzeAudioConfig.model,
-              analyzeAudioConfig.prompts?.[questionName]
+              analyzeAudioFields && (analyzeAudioFields.description || analyzeAudioFields.fields?.length > 0)
+                ? buildPromptFromFields(analyzeAudioFields)
+                : undefined
             );
             if (analyzed) {
               for (const [k, v] of Object.entries(analyzed)) {
@@ -221,12 +247,15 @@ export async function forwardSubmission(
               return;
             }
             const blob = await res.blob();
+            const extractFields_ = extractConfig.prompts?.[questionName];
             const extracted = await extractFields(
               blob,
               att.media_file_basename,
               openaiApiKey,
               extractConfig.model,
-              extractConfig.prompts?.[questionName]
+              extractFields_ && (extractFields_.description || extractFields_.fields?.length > 0)
+                ? buildPromptFromFields(extractFields_)
+                : undefined
             );
             if (extracted) {
               for (const [k, v] of Object.entries(extracted)) {
@@ -250,11 +279,14 @@ export async function forwardSubmission(
           try {
             const text = (submission as Record<string, unknown>)[questionName];
             if (typeof text !== "string" || !text.trim()) return;
+            const extractTextFields_ = extractTextConfig.prompts?.[questionName];
             const extracted = await extractTextFields(
               text,
               openaiApiKey,
               extractTextConfig.model,
-              extractTextConfig.prompts?.[questionName]
+              extractTextFields_ && (extractTextFields_.description || extractTextFields_.fields?.length > 0)
+                ? buildPromptFromFields(extractTextFields_)
+                : undefined
             );
             if (extracted) {
               for (const [k, v] of Object.entries(extracted)) {

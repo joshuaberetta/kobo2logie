@@ -198,9 +198,9 @@ configure.get("/project/:uid", async (c) => {
         forwardToken?: string;
         fields?: string[];
         transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
-        extract?: { questions: string[]; model?: string; prompts?: Record<string, string> };
-        analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, string> };
-        extractText?: { questions: string[]; model?: string; prompts?: Record<string, string> };
+        extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
+        analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
+        extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
         editOriginal?: boolean;
@@ -230,9 +230,9 @@ configure.post("/project/:uid", async (c) => {
     forwardToken?: string;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
-    extract?: { questions: string[]; model?: string; prompts?: Record<string, string> } | null;
-    analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, string> } | null;
-    extractText?: { questions: string[]; model?: string; prompts?: Record<string, string> } | null;
+    extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
+    analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
+    extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
     editOriginal?: boolean;
@@ -268,7 +268,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate extract config if provided
-  let safeExtract: { questions: string[]; model?: string; prompts?: Record<string, string> } | undefined;
+  let safeExtract: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | undefined;
   if (extract != null) {
     if (!Array.isArray(extract.questions)) {
       return c.json({ error: "extract.questions must be an array" }, 400);
@@ -276,11 +276,24 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = extract.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
-    const safePrompts: Record<string, string> = {};
+    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> = {};
     if (extract.prompts && typeof extract.prompts === "object" && !Array.isArray(extract.prompts)) {
-      for (const [k, v] of Object.entries(extract.prompts as Record<string, unknown>)) {
-        if (typeof k === "string" && k.trim() && typeof v === "string") {
-          safePrompts[k.trim()] = String(v).trim();
+      for (const [questionXpath, stored] of Object.entries(extract.prompts as Record<string, unknown>)) {
+        if (typeof questionXpath !== "string" || !questionXpath.trim()) continue;
+        if (!stored || typeof stored !== "object" || Array.isArray(stored)) continue;
+        const s = stored as Record<string, unknown>;
+        const description = typeof s.description === "string" ? s.description.trim() : undefined;
+        const fields = Array.isArray(s.fields) ? s.fields : [];
+        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string }>>((acc, f) => {
+          if (f && typeof f === "object" && !Array.isArray(f)) {
+            const key = String((f as Record<string, unknown>).key ?? "").trim();
+            const instruction = String((f as Record<string, unknown>).instruction ?? "").trim();
+            if (key) acc.push({ key, instruction });
+          }
+          return acc;
+        }, []);
+        if (description || safeFields.length > 0) {
+          safePrompts[questionXpath.trim()] = { ...(description ? { description } : {}), fields: safeFields };
         }
       }
     }
@@ -292,7 +305,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate analyzeAudio config if provided
-  let safeAnalyzeAudio: { questions: string[]; model?: string; prompt?: string } | undefined;
+  let safeAnalyzeAudio: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | undefined;
   if (analyzeAudio != null) {
     if (!Array.isArray(analyzeAudio.questions)) {
       return c.json({ error: "analyzeAudio.questions must be an array" }, 400);
@@ -300,11 +313,24 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = analyzeAudio.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
-    const safePrompts: Record<string, string> = {};
+    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> = {};
     if (analyzeAudio.prompts && typeof analyzeAudio.prompts === "object" && !Array.isArray(analyzeAudio.prompts)) {
-      for (const [k, v] of Object.entries(analyzeAudio.prompts as Record<string, unknown>)) {
-        if (typeof k === "string" && k.trim() && typeof v === "string") {
-          safePrompts[k.trim()] = String(v).trim();
+      for (const [questionXpath, stored] of Object.entries(analyzeAudio.prompts as Record<string, unknown>)) {
+        if (typeof questionXpath !== "string" || !questionXpath.trim()) continue;
+        if (!stored || typeof stored !== "object" || Array.isArray(stored)) continue;
+        const s = stored as Record<string, unknown>;
+        const description = typeof s.description === "string" ? s.description.trim() : undefined;
+        const fields = Array.isArray(s.fields) ? s.fields : [];
+        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string }>>((acc, f) => {
+          if (f && typeof f === "object" && !Array.isArray(f)) {
+            const key = String((f as Record<string, unknown>).key ?? "").trim();
+            const instruction = String((f as Record<string, unknown>).instruction ?? "").trim();
+            if (key) acc.push({ key, instruction });
+          }
+          return acc;
+        }, []);
+        if (description || safeFields.length > 0) {
+          safePrompts[questionXpath.trim()] = { ...(description ? { description } : {}), fields: safeFields };
         }
       }
     }
@@ -316,7 +342,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate extractText config if provided
-  let safeExtractText: { questions: string[]; model?: string; prompts?: Record<string, string> } | undefined;
+  let safeExtractText: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | undefined;
   if (extractText != null) {
     if (!Array.isArray(extractText.questions)) {
       return c.json({ error: "extractText.questions must be an array" }, 400);
@@ -324,11 +350,24 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = extractText.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
-    const safePrompts: Record<string, string> = {};
+    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> = {};
     if (extractText.prompts && typeof extractText.prompts === "object" && !Array.isArray(extractText.prompts)) {
-      for (const [k, v] of Object.entries(extractText.prompts as Record<string, unknown>)) {
-        if (typeof k === "string" && k.trim() && typeof v === "string") {
-          safePrompts[k.trim()] = String(v).trim();
+      for (const [questionXpath, stored] of Object.entries(extractText.prompts as Record<string, unknown>)) {
+        if (typeof questionXpath !== "string" || !questionXpath.trim()) continue;
+        if (!stored || typeof stored !== "object" || Array.isArray(stored)) continue;
+        const s = stored as Record<string, unknown>;
+        const description = typeof s.description === "string" ? s.description.trim() : undefined;
+        const fields = Array.isArray(s.fields) ? s.fields : [];
+        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string }>>((acc, f) => {
+          if (f && typeof f === "object" && !Array.isArray(f)) {
+            const key = String((f as Record<string, unknown>).key ?? "").trim();
+            const instruction = String((f as Record<string, unknown>).instruction ?? "").trim();
+            if (key) acc.push({ key, instruction });
+          }
+          return acc;
+        }, []);
+        if (description || safeFields.length > 0) {
+          safePrompts[questionXpath.trim()] = { ...(description ? { description } : {}), fields: safeFields };
         }
       }
     }
