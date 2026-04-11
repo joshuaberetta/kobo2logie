@@ -435,24 +435,19 @@ ui.get("/:uid", (c) => {
         const fwdUrl = data.forwardUrl ?? '';
         document.getElementById('forward-url').value = fwdUrl;
         document.getElementById('forward-token').value = data.forwardToken ?? '';
-        if (fwdUrl || data.forwardToken) document.getElementById('advanced').open = true;
         if (data.transcribe?.prompt) {
           document.getElementById('transcribe-prompt').value = data.transcribe.prompt;
-          document.getElementById('advanced').open = true;
         }
         if (data.transcribe?.translateTo) {
           document.getElementById('transcribe-translate').value = data.transcribe.translateTo;
-          document.getElementById('advanced').open = true;
         }
         if (data.describe?.prompt) {
           document.getElementById('describe-prompt').value = data.describe.prompt;
-          document.getElementById('advanced').open = true;
         }
         if (Array.isArray(data.forwardMedia) && data.forwardMedia.length > 0) {
           document.querySelectorAll('input[name="fwd-media"]').forEach(cb => {
             cb.checked = data.forwardMedia.includes(cb.value);
           });
-          document.getElementById('advanced').open = true;
         }
         configFields = Array.isArray(data.fields) ? data.fields : [];
         if (data.transcribe && Array.isArray(data.transcribe.questions)) {
