@@ -50,21 +50,20 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, server } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, server } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
       transcribe?: { questions: string[]; model?: string; prompt?: string };
-      describe?: { questions: string[]; model?: string; prompt?: string };
-      extract?: { questions: string[]; model?: string; prompt?: string };
-      analyzeAudio?: { questions: string[]; model?: string; prompt?: string };
-      extractText?: { questions: string[]; model?: string; prompt?: string };
+      extract?: { questions: string[]; model?: string; prompts?: Record<string, string> };
+      analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, string> };
+      extractText?: { questions: string[]; model?: string; prompts?: Record<string, string> };
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
       editOriginal?: boolean;
       server?: string;
     };
-    if (forwardUrl || editOriginal || transcribe || describe || extract || analyzeAudio || extractText) {
+    if (forwardUrl || editOriginal || transcribe || extract || analyzeAudio || extractText) {
       const submission = body as KoboSubmission;
 
       // Build a filtered payload if the user has specified a fields subset (forwarding only)
@@ -107,7 +106,7 @@ hook.post("/:formUID", async (c) => {
         (async () => {
           // ── Step 1: Forward submission (and/or enrich) ───────────────────
           let fwdResult: Awaited<ReturnType<typeof forwardSubmission>> | undefined;
-          if (forwardUrl || transcribe || describe || extract || analyzeAudio || extractText) {
+          if (forwardUrl || transcribe || extract || analyzeAudio || extractText) {
             fwdResult = await forwardSubmission(
               submission,
               forwardUrl,
@@ -120,7 +119,6 @@ hook.post("/:formUID", async (c) => {
               forwardToken || undefined,
               transcribe || undefined,
               openaiApiKey,
-              describe || undefined,
               forwardMedia || undefined,
               extract || undefined,
               analyzeAudio || undefined,

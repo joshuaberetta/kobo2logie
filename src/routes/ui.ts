@@ -294,6 +294,9 @@ ui.get("/:uid", (c) => {
     .kv-add:hover { border-color: #9ca3af; color: #374151; }
     .kv-col-headers { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .4rem; padding-bottom: .1rem; }
     .kv-col-header { font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
+    .prompt-edit-btn { background: none; border: 1.5px solid #e5e7eb; border-radius: 4px; font-size: .7rem; color: #9ca3af; cursor: pointer; padding: .05rem .3rem; line-height: 1.5; flex-shrink: 0; margin-left: .15rem; }
+    .prompt-edit-btn:hover { border-color: #9ca3af; color: #374151; }
+    .prompt-edit-btn.has-prompt { border-color: #93c5fd; color: #2563eb; background: #eff6ff; }
   </style>
 </head>
 <body>
@@ -355,22 +358,6 @@ ui.get("/:uid", (c) => {
           </select>
         </div>
         <div>
-          <label for="describe-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Image description instruction<span class="label-hint">optional — prompt sent to OpenAI with each image</span></label>
-          <textarea id="describe-prompt" rows="2" placeholder="e.g. Describe this image concisely and factually. Focus on visible damage, location features, and any text present."></textarea>
-        </div>
-        <div>
-          <label for="extract-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Image analysis prompt<span class="label-hint">for “Analyze” on images — what to extract; use question xpaths as key names</span></label>
-          <textarea id="extract-prompt" rows="2" placeholder="e.g. Extract name, email, phone, company from this business card. Use these exact keys: group1/name, group1/email, group1/phone, group1/company"></textarea>
-        </div>
-        <div>
-          <label for="analyze-audio-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Audio analysis prompt<span class="label-hint">for “Analyze” on audio — what to extract from the transcript; use question xpaths as key names</span></label>
-          <textarea id="analyze-audio-prompt" rows="2" placeholder="e.g. Extract a short summary, key themes, and sentiment. Use these exact keys: group1/summary, group1/key_themes, group1/sentiment"></textarea>
-        </div>
-        <div>
-          <label for="extract-text-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Text field analysis prompt<span class="label-hint">for "Analyze" on text fields — what to extract; use question xpaths as key names</span></label>
-          <textarea id="extract-text-prompt" rows="2" placeholder="e.g. Extract names of people, locations, and organizations mentioned. Use these exact keys: group1/people, group1/locations, group1/organizations"></textarea>
-        </div>
-        <div>
           <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
           <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
             <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
@@ -423,16 +410,59 @@ ui.get("/:uid", (c) => {
     </div>
   </div>
 
+  <div class="modal-overlay" id="prompt-modal" onclick="closeQPromptModal(event)">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span class="modal-title" id="prompt-modal-title">Analysis instructions</span>
+        <button type="button" class="modal-close" onclick="document.getElementById('prompt-modal').classList.remove('open')">&times;</button>
+      </div>
+      <div class="modal-body" style="gap:1rem">
+        <div class="modal-row">
+          <span class="modal-label">Question</span>
+          <span class="modal-value" id="prompt-modal-question"></span>
+        </div>
+        <div>
+          <label for="prompt-modal-text" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Instructions<span class="label-hint">what to extract — use Kobo question xpaths as key names</span></label>
+          <textarea id="prompt-modal-text" rows="4" placeholder="e.g. Extract names of people, locations, and organizations. Use keys: group1/people, group1/locations, group1/orgs"></textarea>
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
+          <button type="button" class="select-btn" onclick="document.getElementById('prompt-modal').classList.remove('open')">Cancel</button>
+          <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveQPrompt()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const UID = ${raw(JSON.stringify(uid))};
     const SPARKLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
     let allQuestions = [];      // { xpath, label, type }[]
     let configFields = [];      // persisted fields subset
     let configTranscribeQs = []; // persisted transcribe xpath list
-    let configDescribeQs = [];   // persisted describe xpath list
     let configExtractQs = [];    // persisted extract xpath list
     let configAnalyzeAudioQs = []; // persisted analyzeAudio xpath list
     let configExtractTextQs = []; // persisted extractText xpath list
+
+    // Per-question analysis prompts (type → xpath → prompt string)
+    const questionPrompts = { extract: {}, analyzeAudio: {}, extractText: {} };
+
+    // Current state for the prompt modal
+    let _promptXpath = null;
+    let _promptType = null;
+
+    // Dirty state — true when there are unsaved config changes
+    let isDirty = false;
+    function markDirty() {
+      if (isDirty) return;
+      isDirty = true;
+      const btn = document.getElementById('save-btn');
+      if (btn) btn.textContent = 'Save *';
+    }
+    function markClean() {
+      isDirty = false;
+      const btn = document.getElementById('save-btn');
+      if (btn) btn.textContent = 'Save';
+    }
 
     // ── Rendering ────────────────────────────────────────────────────────────
     function renderFieldsList() {
@@ -454,26 +484,28 @@ ui.get("/:uid", (c) => {
           const tChecked = (configTranscribeQs.includes(q.xpath) || analyzeChecked) ? ' checked' : '';
           const tDisabled = analyzeChecked ? ' disabled' : '';
           const aChecked = analyzeChecked ? ' checked' : '';
+          const aHasPrompt = !!questionPrompts.analyzeAudio[q.xpath];
+          const aPromptBtn = '<button type="button" class="prompt-edit-btn' + (aHasPrompt ? ' has-prompt' : '') + '" data-xpath="' + escHtml(q.xpath) + '" data-type="analyzeAudio" onclick="event.stopPropagation();openPromptModal(this.dataset.xpath,this.dataset.type)" title="' + (aHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>';
           subRow = '<label class="question-sub-item"><input type="checkbox" name="transcribe-q" value="' +
             escHtml(q.xpath) + '"' + tChecked + tDisabled + '/>' + SPARKLE_SVG + '<span>Transcribe</span>' +
-            '<span class="q-output">→ ' + escHtml(q.xpath) + '_transcript</span></label>' +
+            '<span class="q-output">\u2192 ' + escHtml(q.xpath) + '_transcript</span></label>' +
             '<label class="question-sub-item"><input type="checkbox" name="analyze-audio-q" value="' +
-            escHtml(q.xpath) + '"' + aChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
-            '<span class="q-output">→ (JSON fields)</span></label>';
+            escHtml(q.xpath) + '"' + aChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' + aPromptBtn +
+            '<span class="q-output">\u2192 (JSON fields)</span></label>';
         } else if (q.type === 'image' || q.type === 'photo') {
-          const dChecked = configDescribeQs.includes(q.xpath) ? ' checked' : '';
           const eChecked = configExtractQs.includes(q.xpath) ? ' checked' : '';
-          subRow = '<label class="question-sub-item"><input type="checkbox" name="describe-q" value="' +
-            escHtml(q.xpath) + '"' + dChecked + '/>' + SPARKLE_SVG + '<span>Describe</span>' +
-            '<span class="q-output">→ ' + escHtml(q.xpath) + '_description</span></label>' +
-            '<label class="question-sub-item"><input type="checkbox" name="extract-q" value="' +
-            escHtml(q.xpath) + '"' + eChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
-            '<span class="q-output">→ (JSON fields)</span></label>';
+          const eHasPrompt = !!questionPrompts.extract[q.xpath];
+          const ePromptBtn = '<button type="button" class="prompt-edit-btn' + (eHasPrompt ? ' has-prompt' : '') + '" data-xpath="' + escHtml(q.xpath) + '" data-type="extract" onclick="event.stopPropagation();openPromptModal(this.dataset.xpath,this.dataset.type)" title="' + (eHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>';
+          subRow = '<label class="question-sub-item"><input type="checkbox" name="extract-q" value="' +
+            escHtml(q.xpath) + '"' + eChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' + ePromptBtn +
+            '<span class="q-output">\u2192 (JSON fields)</span></label>';
         } else if (q.type === 'text') {
           const tChecked = configExtractTextQs.includes(q.xpath) ? ' checked' : '';
+          const tHasPrompt = !!questionPrompts.extractText[q.xpath];
+          const tPromptBtn = '<button type="button" class="prompt-edit-btn' + (tHasPrompt ? ' has-prompt' : '') + '" data-xpath="' + escHtml(q.xpath) + '" data-type="extractText" onclick="event.stopPropagation();openPromptModal(this.dataset.xpath,this.dataset.type)" title="' + (tHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>';
           subRow = '<label class="question-sub-item"><input type="checkbox" name="extract-text-q" value="' +
-            escHtml(q.xpath) + '"' + tChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
-            '<span class="q-output">→ (JSON fields)</span></label>';
+            escHtml(q.xpath) + '"' + tChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' + tPromptBtn +
+            '<span class="q-output">\u2192 (JSON fields)</span></label>';
         }
         return subRow ? '<div>' + mainRow + subRow + '</div>' : mainRow;
       }).join('');
@@ -491,10 +523,6 @@ ui.get("/:uid", (c) => {
         .map(cb => cb.value);
     }
 
-    function getSelectedImageQs() {
-      return Array.from(document.querySelectorAll('#fields-list input[name="describe-q"]:checked')).map(cb => cb.value);
-    }
-
     function getSelectedExtractQs() {
       return Array.from(document.querySelectorAll('#fields-list input[name="extract-q"]:checked')).map(cb => cb.value);
     }
@@ -507,14 +535,51 @@ ui.get("/:uid", (c) => {
       return Array.from(document.querySelectorAll('#fields-list input[name="extract-text-q"]:checked')).map(cb => cb.value);
     }
 
+    // ── Per-question prompt modal ─────────────────────────────────────────────
+    function openPromptModal(xpath, type) {
+      _promptXpath = xpath;
+      _promptType = type;
+      const q = allQuestions.find(q => q.xpath === xpath);
+      document.getElementById('prompt-modal-question').textContent = q ? q.label + (q.label !== xpath ? ' (' + xpath + ')' : '') : xpath;
+      const typeLabels = { extract: 'Analyze (image)', analyzeAudio: 'Analyze (audio)', extractText: 'Analyze (text)' };
+      document.getElementById('prompt-modal-title').textContent = (typeLabels[type] || type) + ' instructions';
+      document.getElementById('prompt-modal-text').value = questionPrompts[type][xpath] || '';
+      document.getElementById('prompt-modal').classList.add('open');
+      document.getElementById('prompt-modal-text').focus();
+    }
+
+    function saveQPrompt() {
+      if (!_promptXpath || !_promptType) return;
+      const text = document.getElementById('prompt-modal-text').value.trim();
+      if (text) {
+        questionPrompts[_promptType][_promptXpath] = text;
+      } else {
+        delete questionPrompts[_promptType][_promptXpath];
+      }
+      document.getElementById('prompt-modal').classList.remove('open');
+      _promptXpath = null;
+      _promptType = null;
+      markDirty();
+      renderFieldsList();
+    }
+
+    function closeQPromptModal(e) {
+      if (e && e.target !== document.getElementById('prompt-modal')) return;
+      document.getElementById('prompt-modal').classList.remove('open');
+      _promptXpath = null;
+      _promptType = null;
+    }
+
     function selectAllFields() {
       document.querySelectorAll('#fields-list input[name="field"]').forEach(cb => { cb.checked = true; });
       updateFieldsCount();
+      markDirty();
     }
 
     function deselectAllFields() {
       document.querySelectorAll('#fields-list input[name="field"]').forEach(cb => { cb.checked = false; });
       updateFieldsCount();
+      markDirty();
     }
 
     function updateFieldsCount() {
@@ -531,6 +596,12 @@ ui.get("/:uid", (c) => {
       list.style.display = hidden ? '' : 'none';
       btn.innerHTML = hidden ? '&#9660;' : '&#9654;';
     }
+
+    document.addEventListener('input', markDirty);
+    document.addEventListener('change', markDirty);
+    document.addEventListener('click', function(e) {
+      if (e.target && e.target.classList.contains('kv-remove')) markDirty();
+    });
 
     document.getElementById('fields-list').addEventListener('change', function(e) {
       updateFieldsCount();
@@ -590,6 +661,7 @@ ui.get("/:uid", (c) => {
     }
     function addKVRow() {
       document.getElementById('kv-editor').insertAdjacentHTML('beforeend', kvRowHtml('', ''));
+      markDirty();
     }
     function getAppendValues() {
       return Array.from(document.querySelectorAll('#kv-editor .kv-row')).reduce(function(acc, row) {
@@ -624,29 +696,23 @@ ui.get("/:uid", (c) => {
         if (data.transcribe && Array.isArray(data.transcribe.questions)) {
           configTranscribeQs = data.transcribe.questions;
         }
-        if (data.describe && Array.isArray(data.describe.questions)) {
-          configDescribeQs = data.describe.questions;
-        }
-        if (data.describe?.prompt) {
-          document.getElementById('describe-prompt').value = data.describe.prompt;
-        }
         if (data.extract && Array.isArray(data.extract.questions)) {
           configExtractQs = data.extract.questions;
         }
-        if (data.extract?.prompt) {
-          document.getElementById('extract-prompt').value = data.extract.prompt;
+        if (data.extract?.prompts && typeof data.extract.prompts === 'object') {
+          Object.assign(questionPrompts.extract, data.extract.prompts);
         }
         if (data.analyzeAudio && Array.isArray(data.analyzeAudio.questions)) {
           configAnalyzeAudioQs = data.analyzeAudio.questions;
         }
-        if (data.analyzeAudio?.prompt) {
-          document.getElementById('analyze-audio-prompt').value = data.analyzeAudio.prompt;
+        if (data.analyzeAudio?.prompts && typeof data.analyzeAudio.prompts === 'object') {
+          Object.assign(questionPrompts.analyzeAudio, data.analyzeAudio.prompts);
         }
         if (data.extractText && Array.isArray(data.extractText.questions)) {
           configExtractTextQs = data.extractText.questions;
         }
-        if (data.extractText?.prompt) {
-          document.getElementById('extract-text-prompt').value = data.extractText.prompt;
+        if (data.extractText?.prompts && typeof data.extractText.prompts === 'object') {
+          Object.assign(questionPrompts.extractText, data.extractText.prompts);
         }
         document.getElementById('edit-original').checked = !!data.editOriginal;
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
@@ -676,25 +742,20 @@ ui.get("/:uid", (c) => {
             ...(transcribeTranslate ? { translateTo: transcribeTranslate } : {}),
           }
         : null;
-      const selectedImages = getSelectedImageQs();
-      const describePrompt = document.getElementById('describe-prompt').value.trim();
-      const describe = selectedImages.length > 0
-        ? { questions: selectedImages, ...(describePrompt ? { prompt: describePrompt } : {}) }
-        : null;
       const selectedExtract = getSelectedExtractQs();
-      const extractPrompt = document.getElementById('extract-prompt').value.trim();
+      const extractPrompts = selectedExtract.reduce((a, x) => { if (questionPrompts.extract[x]) a[x] = questionPrompts.extract[x]; return a; }, {});
       const extract = selectedExtract.length > 0
-        ? { questions: selectedExtract, ...(extractPrompt ? { prompt: extractPrompt } : {}) }
+        ? { questions: selectedExtract, ...(Object.keys(extractPrompts).length > 0 ? { prompts: extractPrompts } : {}) }
         : null;
       const selectedAnalyzeAudio = getSelectedAnalyzeAudioQs();
-      const analyzeAudioPrompt = document.getElementById('analyze-audio-prompt').value.trim();
+      const analyzeAudioPrompts = selectedAnalyzeAudio.reduce((a, x) => { if (questionPrompts.analyzeAudio[x]) a[x] = questionPrompts.analyzeAudio[x]; return a; }, {});
       const analyzeAudio = selectedAnalyzeAudio.length > 0
-        ? { questions: selectedAnalyzeAudio, ...(analyzeAudioPrompt ? { prompt: analyzeAudioPrompt } : {}) }
+        ? { questions: selectedAnalyzeAudio, ...(Object.keys(analyzeAudioPrompts).length > 0 ? { prompts: analyzeAudioPrompts } : {}) }
         : null;
       const selectedExtractText = getSelectedExtractTextQs();
-      const extractTextPrompt = document.getElementById('extract-text-prompt').value.trim();
+      const extractTextPrompts = selectedExtractText.reduce((a, x) => { if (questionPrompts.extractText[x]) a[x] = questionPrompts.extractText[x]; return a; }, {});
       const extractText = selectedExtractText.length > 0
-        ? { questions: selectedExtractText, ...(extractTextPrompt ? { prompt: extractTextPrompt } : {}) }
+        ? { questions: selectedExtractText, ...(Object.keys(extractTextPrompts).length > 0 ? { prompts: extractTextPrompts } : {}) }
         : null;
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
@@ -703,10 +764,11 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
+          markClean();
         } else {
           const data = await res.json();
           setStatus('error', 'Error: ' + (data.error ?? res.status));

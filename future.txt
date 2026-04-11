@@ -1,3 +1,31 @@
 - option to edit original submission
 - option to append values to the submission json sent to external service
 - option for ai response to add more fields to submission json, eg. business card
+
+Here are ideas worth considering, roughly ordered by impact-to-effort:
+
+High utility, low complexity
+
+Conditional forwarding — only forward/enrich if a field matches a rule, e.g. severity == "critical" or country != "". Avoids noise and API costs on junk/test submissions.
+
+Reverse geocoding — when a submission has _geolocation, call a geocoding API (Nominatim is free) and write back admin1, admin2, locality to Kobo. Zero AI cost, high practical value for field teams.
+
+Response field injection — take values from the external service's response JSON and write them back to Kobo (e.g. the downstream system assigns a ticket ID — write it back as ticket_id). Extends the existing edit-back pipeline.
+
+Higher utility, medium complexity
+
+Multi-destination fan-out — forward to more than one URL, each with its own token and field subset (e.g. one destination gets everything, another gets only aggregate-safe fields stripped of PII).
+
+Slack / Teams alert — a simple webhook notification when a submission arrives matching a condition. Huge "wow" for field coordinators who don't want to watch the viewer all day.
+
+PDF/document OCR — extend the Analyze step to work on application/pdf attachments using OpenAI's file API, extracting text the same way images do.
+
+Wow factor / innovative
+
+Cross-submission aggregation — maintain a running count/summary per form (total submissions today, most common answer to a select-one) written back somewhere, or surfaced in the viewer. Turns the viewer from a log into a live dashboard.
+
+Named entity extraction from free-text fields — run GPT on text answer fields (not just audio/images) to pull out people, locations, organizations and write them as structured fields in Kobo.
+
+Submission validation + Kobo flag — evaluate rules against the submission and use the Kobo validation status API to automatically flag a submission as "Not approved" with a reason if it fails.
+
+The three I'd prioritise: conditional forwarding (practical, saves AI costs), reverse geocoding (zero cost, high field value), and response field injection (closes the loop with downstream systems).

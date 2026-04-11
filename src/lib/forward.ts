@@ -1,7 +1,6 @@
 import { attachmentsToForward } from "./kobo.js";
 import type { KoboSubmission } from "./kobo.js";
 import { transcribeAudio } from "./transcribe.js";
-import { describeImage } from "./describe.js";
 import { extractFields } from "./extract.js";
 import { analyzeAudioText } from "./analyzeAudio.js";
 import { extractTextFields } from "./extractText.js";
@@ -41,10 +40,6 @@ function resolveKoboToken(
  * named question are fetched and transcribed; the results are injected into the
  * submission JSON as "<questionName>_transcript" before forwarding.
  *
- * If describeConfig and openaiApiKey are provided, image attachments for each
- * named question are fetched and described; the results are injected into the
- * submission JSON as "<questionName>_description" before forwarding.
- *
  * The correct wfp_logie Kobo token is selected based on koboBaseUrl hostname.
  * All errors are swallowed and logged — this function never throws.
  */
@@ -57,11 +52,10 @@ export async function forwardSubmission(
   forwardToken?: string,
   transcribeConfig?: { questions: string[]; model?: string; prompt?: string; translateTo?: string },
   openaiApiKey?: string,
-  describeConfig?: { questions: string[]; model?: string; prompt?: string },
   forwardMedia?: string[],
-  extractConfig?: { questions: string[]; model?: string; prompt?: string },
-  analyzeAudioConfig?: { questions: string[]; model?: string; prompt?: string },
-  extractTextConfig?: { questions: string[]; model?: string; prompt?: string }
+  extractConfig?: { questions: string[]; model?: string; prompts?: Record<string, string> },
+  analyzeAudioConfig?: { questions: string[]; model?: string; prompts?: Record<string, string> },
+  extractTextConfig?: { questions: string[]; model?: string; prompts?: Record<string, string> }
 ): Promise<ForwardResult> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
@@ -187,7 +181,7 @@ export async function forwardSubmission(
               transcript,
               openaiApiKey,
               analyzeAudioConfig.model,
-              analyzeAudioConfig.prompt
+              analyzeAudioConfig.prompts?.[questionName]
             );
             if (analyzed) {
               for (const [k, v] of Object.entries(analyzed)) {
@@ -203,50 +197,6 @@ export async function forwardSubmission(
         })
       );
     }
-    // ── Image description ──────────────────────────────────────────────────
-    if (describeConfig && openaiApiKey && describeConfig.questions.length > 0) {
-      const imageByXpath = new Map(
-        (submission._attachments ?? [])
-          .filter((a) => !a.is_deleted && a.mimetype.startsWith("image/"))
-          .map((a) => [a.question_xpath, a])
-      );
-
-      await Promise.all(
-        describeConfig.questions.map(async (questionName) => {
-          const att = imageByXpath.get(questionName);
-          if (!att) {
-            console.warn(`[describe] No image attachment found for question_xpath "${questionName}"`);
-            return;
-          }
-          try {
-            const res = await fetch(att.download_url, {
-              headers: { Authorization: `Token ${token}` },
-            });
-            if (!res.ok) {
-              console.error(
-                `[describe] Failed to fetch image for "${questionName}": HTTP ${res.status}`
-              );
-              return;
-            }
-            const blob = await res.blob();
-            const description = await describeImage(
-              blob,
-              att.media_file_basename,
-              openaiApiKey,
-              describeConfig.model,
-              describeConfig.prompt
-            );
-            if (description) {
-              payload[`${questionName}_description`] = description;
-              enrichment[`${questionName}_description`] = description;
-            }
-          } catch (err) {
-            console.error(`[describe] Error describing "${questionName}":`, err);
-          }
-        })
-      );
-    }
-
     // ── Field extraction ───────────────────────────────────────────────────
     if (extractConfig && openaiApiKey && extractConfig.questions.length > 0) {
       const imageByXpath = new Map(
@@ -276,7 +226,7 @@ export async function forwardSubmission(
               att.media_file_basename,
               openaiApiKey,
               extractConfig.model,
-              extractConfig.prompt
+              extractConfig.prompts?.[questionName]
             );
             if (extracted) {
               for (const [k, v] of Object.entries(extracted)) {
@@ -304,7 +254,7 @@ export async function forwardSubmission(
               text,
               openaiApiKey,
               extractTextConfig.model,
-              extractTextConfig.prompt
+              extractTextConfig.prompts?.[questionName]
             );
             if (extracted) {
               for (const [k, v] of Object.entries(extracted)) {

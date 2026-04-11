@@ -198,10 +198,9 @@ configure.get("/project/:uid", async (c) => {
         forwardToken?: string;
         fields?: string[];
         transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
-        describe?: { questions: string[]; model?: string; prompt?: string };
-        extract?: { questions: string[]; model?: string; prompt?: string };
-        analyzeAudio?: { questions: string[]; model?: string; prompt?: string };
-        extractText?: { questions: string[]; model?: string; prompt?: string };
+        extract?: { questions: string[]; model?: string; prompts?: Record<string, string> };
+        analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, string> };
+        extractText?: { questions: string[]; model?: string; prompts?: Record<string, string> };
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
         editOriginal?: boolean;
@@ -213,7 +212,6 @@ configure.get("/project/:uid", async (c) => {
     forwardToken: config.forwardToken ?? "",
     fields: config.fields ?? [],
     transcribe: config.transcribe ?? null,
-    describe: config.describe ?? null,
     extract: config.extract ?? null,
     analyzeAudio: config.analyzeAudio ?? null,
     extractText: config.extractText ?? null,
@@ -227,15 +225,14 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
-    describe?: { questions: string[]; model?: string; prompt?: string } | null;
-    extract?: { questions: string[]; model?: string; prompt?: string } | null;
-    analyzeAudio?: { questions: string[]; model?: string; prompt?: string } | null;
-    extractText?: { questions: string[]; model?: string; prompt?: string } | null;
+    extract?: { questions: string[]; model?: string; prompts?: Record<string, string> } | null;
+    analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, string> } | null;
+    extractText?: { questions: string[]; model?: string; prompts?: Record<string, string> } | null;
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
     editOriginal?: boolean;
@@ -270,24 +267,8 @@ configure.post("/project/:uid", async (c) => {
     };
   }
 
-  // Validate describe config if provided
-  let safeDescribe: { questions: string[]; model?: string; prompt?: string } | undefined;
-  if (describe != null) {
-    if (!Array.isArray(describe.questions)) {
-      return c.json({ error: "describe.questions must be an array" }, 400);
-    }
-    const safeQuestions = describe.questions
-      .map((q) => String(q).trim())
-      .filter(Boolean);
-    safeDescribe = {
-      questions: safeQuestions,
-      ...(describe.model ? { model: String(describe.model).trim() } : {}),
-      ...(describe.prompt ? { prompt: String(describe.prompt).trim() } : {}),
-    };
-  }
-
   // Validate extract config if provided
-  let safeExtract: { questions: string[]; model?: string; prompt?: string } | undefined;
+  let safeExtract: { questions: string[]; model?: string; prompts?: Record<string, string> } | undefined;
   if (extract != null) {
     if (!Array.isArray(extract.questions)) {
       return c.json({ error: "extract.questions must be an array" }, 400);
@@ -295,10 +276,18 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = extract.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
+    const safePrompts: Record<string, string> = {};
+    if (extract.prompts && typeof extract.prompts === "object" && !Array.isArray(extract.prompts)) {
+      for (const [k, v] of Object.entries(extract.prompts as Record<string, unknown>)) {
+        if (typeof k === "string" && k.trim() && typeof v === "string") {
+          safePrompts[k.trim()] = String(v).trim();
+        }
+      }
+    }
     safeExtract = {
       questions: safeQuestions,
       ...(extract.model ? { model: String(extract.model).trim() } : {}),
-      ...(extract.prompt ? { prompt: String(extract.prompt).trim() } : {}),
+      ...(Object.keys(safePrompts).length > 0 ? { prompts: safePrompts } : {}),
     };
   }
 
@@ -311,15 +300,23 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = analyzeAudio.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
+    const safePrompts: Record<string, string> = {};
+    if (analyzeAudio.prompts && typeof analyzeAudio.prompts === "object" && !Array.isArray(analyzeAudio.prompts)) {
+      for (const [k, v] of Object.entries(analyzeAudio.prompts as Record<string, unknown>)) {
+        if (typeof k === "string" && k.trim() && typeof v === "string") {
+          safePrompts[k.trim()] = String(v).trim();
+        }
+      }
+    }
     safeAnalyzeAudio = {
       questions: safeQuestions,
       ...(analyzeAudio.model ? { model: String(analyzeAudio.model).trim() } : {}),
-      ...(analyzeAudio.prompt ? { prompt: String(analyzeAudio.prompt).trim() } : {}),
+      ...(Object.keys(safePrompts).length > 0 ? { prompts: safePrompts } : {}),
     };
   }
 
   // Validate extractText config if provided
-  let safeExtractText: { questions: string[]; model?: string; prompt?: string } | undefined;
+  let safeExtractText: { questions: string[]; model?: string; prompts?: Record<string, string> } | undefined;
   if (extractText != null) {
     if (!Array.isArray(extractText.questions)) {
       return c.json({ error: "extractText.questions must be an array" }, 400);
@@ -327,10 +324,18 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = extractText.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
+    const safePrompts: Record<string, string> = {};
+    if (extractText.prompts && typeof extractText.prompts === "object" && !Array.isArray(extractText.prompts)) {
+      for (const [k, v] of Object.entries(extractText.prompts as Record<string, unknown>)) {
+        if (typeof k === "string" && k.trim() && typeof v === "string") {
+          safePrompts[k.trim()] = String(v).trim();
+        }
+      }
+    }
     safeExtractText = {
       questions: safeQuestions,
       ...(extractText.model ? { model: String(extractText.model).trim() } : {}),
-      ...(extractText.prompt ? { prompt: String(extractText.prompt).trim() } : {}),
+      ...(Object.keys(safePrompts).length > 0 ? { prompts: safePrompts } : {}),
     };
   }
 
@@ -355,7 +360,7 @@ configure.post("/project/:uid", async (c) => {
       .filter((e) => e.key.length > 0);
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -373,12 +378,6 @@ configure.post("/project/:uid", async (c) => {
       delete next.transcribe;
     } else if (safeTranscribe !== undefined) {
       next.transcribe = safeTranscribe;
-    }
-    // describe: null means "clear", undefined means "don't touch"
-    if (describe === null) {
-      delete next.describe;
-    } else if (safeDescribe !== undefined) {
-      next.describe = safeDescribe;
     }
     // extract: null means "clear", undefined means "don't touch"
     if (extract === null) {
