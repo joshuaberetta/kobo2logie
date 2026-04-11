@@ -2,6 +2,8 @@ import { attachmentsToForward } from "./kobo.js";
 import type { KoboSubmission } from "./kobo.js";
 import { transcribeAudio } from "./transcribe.js";
 import { describeImage } from "./describe.js";
+import { extractFields } from "./extract.js";
+import { analyzeAudioText } from "./analyzeAudio.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
@@ -10,6 +12,8 @@ export interface ForwardResult {
   httpStatus?: number;
   responseBody?: string;
   error?: string;
+  /** Keys written into the payload during enrichment (transcripts + descriptions). Used by the edit-back step. */
+  enrichment?: Record<string, string>;
 }
 
 function resolveKoboToken(
@@ -45,7 +49,7 @@ function resolveKoboToken(
  */
 export async function forwardSubmission(
   submission: KoboSubmission,
-  forwardUrl: string,
+  forwardUrl: string | undefined,
   koboBaseUrl: string,
   tokens: { global: string; eu: string },
   jsonPayload?: Record<string, unknown>,
@@ -53,10 +57,16 @@ export async function forwardSubmission(
   transcribeConfig?: { questions: string[]; model?: string; prompt?: string; translateTo?: string },
   openaiApiKey?: string,
   describeConfig?: { questions: string[]; model?: string; prompt?: string },
-  forwardMedia?: string[]
+  forwardMedia?: string[],
+  extractConfig?: { questions: string[]; model?: string; prompt?: string },
+  analyzeAudioConfig?: { questions: string[]; model?: string; prompt?: string }
 ): Promise<ForwardResult> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
+
+    // Tracks enrichment values added to the payload — returned so the caller
+    // can optionally write them back to Kobo via the edit-back step.
+    const enrichment: Record<string, string> = {};
 
     // Build the working payload; we may mutate it with transcript keys below.
     const payload: Record<string, unknown> = jsonPayload ? { ...jsonPayload } : { ...submission };
@@ -129,6 +139,7 @@ export async function forwardSubmission(
                 }
               }
               payload[`${questionName}_transcript`] = finalText;
+              enrichment[`${questionName}_transcript`] = finalText;
             }
           } catch (err) {
             console.error(`[transcribe] Error transcribing "${questionName}":`, err);
@@ -136,7 +147,60 @@ export async function forwardSubmission(
         })
       );
     }
+    // ── Audio analysis ─────────────────────────────────────────────────────
+    if (analyzeAudioConfig && openaiApiKey && analyzeAudioConfig.questions.length > 0) {
+      const audioByXpathForAnalysis = new Map(
+        (submission._attachments ?? [])
+          .filter((a) => !a.is_deleted && a.mimetype.startsWith("audio/"))
+          .map((a) => [a.question_xpath, a])
+      );
 
+      await Promise.all(
+        analyzeAudioConfig.questions.map(async (questionName) => {
+          try {
+            // Reuse transcript already placed in payload by the transcription step
+            let transcript = payload[`${questionName}_transcript`] as string | undefined;
+
+            if (!transcript) {
+              // Transcription not enabled for this question — transcribe fresh for analysis only
+              const att = audioByXpathForAnalysis.get(questionName);
+              if (!att) {
+                console.warn(`[analyze-audio] No audio attachment found for question_xpath "${questionName}"`);
+                return;
+              }
+              const res = await fetch(att.download_url, {
+                headers: { Authorization: `Token ${token}` },
+              });
+              if (!res.ok) {
+                console.error(`[analyze-audio] Failed to fetch audio for "${questionName}": HTTP ${res.status}`);
+                return;
+              }
+              const blob = await res.blob();
+              transcript = await transcribeAudio(blob, att.media_file_basename, openaiApiKey) || undefined;
+            }
+
+            if (!transcript) return;
+
+            const analyzed = await analyzeAudioText(
+              transcript,
+              openaiApiKey,
+              analyzeAudioConfig.model,
+              analyzeAudioConfig.prompt
+            );
+            if (analyzed) {
+              for (const [k, v] of Object.entries(analyzed)) {
+                if (k !== "_uuid") {
+                  payload[k] = v;
+                  enrichment[k] = v;
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[analyze-audio] Error analyzing "${questionName}":`, err);
+          }
+        })
+      );
+    }
     // ── Image description ──────────────────────────────────────────────────
     if (describeConfig && openaiApiKey && describeConfig.questions.length > 0) {
       const imageByXpath = new Map(
@@ -172,12 +236,64 @@ export async function forwardSubmission(
             );
             if (description) {
               payload[`${questionName}_description`] = description;
+              enrichment[`${questionName}_description`] = description;
             }
           } catch (err) {
             console.error(`[describe] Error describing "${questionName}":`, err);
           }
         })
       );
+    }
+
+    // ── Field extraction ───────────────────────────────────────────────────
+    if (extractConfig && openaiApiKey && extractConfig.questions.length > 0) {
+      const imageByXpath = new Map(
+        (submission._attachments ?? [])
+          .filter((a) => !a.is_deleted && a.mimetype.startsWith("image/"))
+          .map((a) => [a.question_xpath, a])
+      );
+
+      await Promise.all(
+        extractConfig.questions.map(async (questionName) => {
+          const att = imageByXpath.get(questionName);
+          if (!att) {
+            console.warn(`[extract] No image attachment found for question_xpath "${questionName}"`);
+            return;
+          }
+          try {
+            const res = await fetch(att.download_url, {
+              headers: { Authorization: `Token ${token}` },
+            });
+            if (!res.ok) {
+              console.error(`[extract] Failed to fetch image for "${questionName}": HTTP ${res.status}`);
+              return;
+            }
+            const blob = await res.blob();
+            const extracted = await extractFields(
+              blob,
+              att.media_file_basename,
+              openaiApiKey,
+              extractConfig.model,
+              extractConfig.prompt
+            );
+            if (extracted) {
+              for (const [k, v] of Object.entries(extracted)) {
+                if (k !== "_uuid") {
+                  payload[k] = v;
+                  enrichment[k] = v;
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[extract] Error extracting from "${questionName}":`, err);
+          }
+        })
+      );
+    }
+
+    // If there is no forwarding target, return enrichment and stop here.
+    if (!forwardUrl) {
+      return { ok: true, enrichment };
     }
 
     // ── Attachment fetch & forward ─────────────────────────────────────────
@@ -234,9 +350,9 @@ export async function forwardSubmission(
       console.error(
         `[forward] External service returned HTTP ${fwdRes.status} for ${forwardUrl}`
       );
-      return { ok: false, httpStatus: fwdRes.status, responseBody: truncatedBody };
+      return { ok: false, httpStatus: fwdRes.status, responseBody: truncatedBody, enrichment };
     }
-    return { ok: true, httpStatus: fwdRes.status, responseBody: truncatedBody };
+    return { ok: true, httpStatus: fwdRes.status, responseBody: truncatedBody, enrichment };
   } catch (err) {
     console.error("[forward] Unhandled error in forwardSubmission:", err);
     return { ok: false, error: String(err) };

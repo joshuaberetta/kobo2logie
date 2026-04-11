@@ -1,2 +1,3 @@
 - option to edit original submission
 - option to append values to the submission json sent to external service
+- option for ai response to add more fields to submission json, eg. business card

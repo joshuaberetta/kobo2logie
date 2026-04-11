@@ -6,6 +6,9 @@ export interface LogEntry {
   httpStatus?: number; // HTTP status code from the forwarding target
   responseBody?: string; // first 2 KB of the target's response body
   error?: string;      // error message if failed
+  editOk?: boolean;        // true = edit-back succeeded, false = failed, absent = not attempted
+  editHttpStatus?: number; // HTTP status from the Kobo bulk-edit endpoint
+  editError?: string;      // error message if edit-back failed
 }
 
 export interface Env {

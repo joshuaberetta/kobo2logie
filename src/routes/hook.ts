@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env, LogEntry } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
+import { resolveSubmissionId, editSubmission, resolveKoboEditToken } from "../lib/koboEdit.js";
 
 const hook = new Hono<{ Bindings: Env }>();
 
@@ -46,77 +47,130 @@ hook.post("/:formUID", async (c) => {
     return c.text("Failed to relay submission", 502);
   }
 
-  // Fire-and-forget forwarding if a URL is configured for this form
+  // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia, appendValues } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, forwardMedia, appendValues, editOriginal, server } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
       transcribe?: { questions: string[]; model?: string; prompt?: string };
       describe?: { questions: string[]; model?: string; prompt?: string };
+      extract?: { questions: string[]; model?: string; prompt?: string };
+      analyzeAudio?: { questions: string[]; model?: string; prompt?: string };
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
+      editOriginal?: boolean;
+      server?: string;
     };
-    if (forwardUrl) {
+    if (forwardUrl || editOriginal || transcribe || describe || extract || analyzeAudio) {
       const submission = body as KoboSubmission;
 
-      // Build a filtered payload if the user has specified a fields subset
+      // Build a filtered payload if the user has specified a fields subset (forwarding only)
       let jsonPayload: Record<string, unknown> | undefined;
-      if (fields && fields.length > 0) {
-        const filtered: Record<string, unknown> = {};
-        // _uuid is always included regardless of the fields filter
-        const fieldsWithUuid = fields.includes("_uuid") ? fields : ["_uuid", ...fields];
-        for (const f of fieldsWithUuid) {
-          if (Object.prototype.hasOwnProperty.call(submission, f)) {
-            filtered[f] = (submission as Record<string, unknown>)[f];
+      if (forwardUrl) {
+        if (fields && fields.length > 0) {
+          const filtered: Record<string, unknown> = {};
+          // _uuid is always included regardless of the fields filter
+          const fieldsWithUuid = fields.includes("_uuid") ? fields : ["_uuid", ...fields];
+          for (const f of fieldsWithUuid) {
+            if (Object.prototype.hasOwnProperty.call(submission, f)) {
+              filtered[f] = (submission as Record<string, unknown>)[f];
+            }
+          }
+          if (Object.keys(filtered).length > 0) {
+            jsonPayload = filtered;
+          } else {
+            console.warn(
+              `[hook] None of the configured fields [${fields.join(", ")}] matched the submission keys. Forwarding full submission.`
+            );
           }
         }
-        if (Object.keys(filtered).length > 0) {
-          jsonPayload = filtered;
-        } else {
-          console.warn(
-            `[hook] None of the configured fields [${fields.join(", ")}] matched the submission keys. Forwarding full submission.`
-          );
-        }
-      }
 
-      // Inject configured key-value pairs under _metadata in the forwarded payload
-      if (appendValues && appendValues.length > 0) {
-        const meta: Record<string, string> = {};
-        for (const { key, value } of appendValues) {
-          meta[key] = value;
+        // Inject configured key-value pairs under _metadata in the forwarded payload
+        if (appendValues && appendValues.length > 0) {
+          const meta: Record<string, string> = {};
+          for (const { key, value } of appendValues) {
+            meta[key] = value;
+          }
+          if (!jsonPayload) {
+            jsonPayload = { ...(submission as Record<string, unknown>) };
+          }
+          jsonPayload._metadata = meta;
         }
-        if (!jsonPayload) {
-          jsonPayload = { ...(submission as Record<string, unknown>) };
-        }
-        jsonPayload._metadata = meta;
       }
 
       const openaiApiKey = c.env.OPENAI_API_KEY || undefined;
 
       c.executionCtx.waitUntil(
         (async () => {
-          const result = await forwardSubmission(
-            submission,
-            forwardUrl,
-            c.env.DEFAULT_KOBO_BASE_URL,
-            {
-              global: c.env.KOBO_API_TOKEN_GLOBAL,
-              eu: c.env.KOBO_API_TOKEN_EU,
-            },
-            jsonPayload,
-            forwardToken || undefined,
-            transcribe || undefined,
-            openaiApiKey,
-            describe || undefined,
-            forwardMedia || undefined
-          );
+          // ── Step 1: Forward submission (and/or enrich) ───────────────────
+          let fwdResult: Awaited<ReturnType<typeof forwardSubmission>> | undefined;
+          if (forwardUrl || transcribe || describe || extract || analyzeAudio) {
+            fwdResult = await forwardSubmission(
+              submission,
+              forwardUrl,
+              c.env.DEFAULT_KOBO_BASE_URL,
+              {
+                global: c.env.KOBO_API_TOKEN_GLOBAL,
+                eu: c.env.KOBO_API_TOKEN_EU,
+              },
+              jsonPayload,
+              forwardToken || undefined,
+              transcribe || undefined,
+              openaiApiKey,
+              describe || undefined,
+              forwardMedia || undefined,
+              extract || undefined,
+              analyzeAudio || undefined
+            );
+          }
+
+          // ── Step 2: Edit original submission ─────────────────────────────
+          let editOk: boolean | undefined;
+          let editHttpStatus: number | undefined;
+          let editError: string | undefined;
+
+          if (editOriginal && server && submission._uuid) {
+            // Build edit payload: flat appendValues + enrichment from forward step.
+            // _uuid must never be written back as a field value.
+            const editData: Record<string, string> = {};
+            for (const { key, value } of appendValues ?? []) {
+              if (key !== "_uuid") editData[key] = value;
+            }
+            for (const [k, v] of Object.entries(fwdResult?.enrichment ?? {})) {
+              if (k !== "_uuid") editData[k] = v;
+            }
+
+            if (Object.keys(editData).length > 0) {
+              const koboToken = resolveKoboEditToken(server, {
+                global: c.env.KOBO_API_TOKEN_GLOBAL,
+                eu: c.env.KOBO_API_TOKEN_EU,
+              });
+              const submissionId = await resolveSubmissionId(server, formUID, submission._uuid, koboToken);
+              if (submissionId !== null) {
+                const editResult = await editSubmission(server, formUID, submissionId, editData, koboToken);
+                editOk = editResult.ok;
+                editHttpStatus = editResult.httpStatus;
+                editError = editResult.error;
+              } else {
+                editOk = false;
+                editError = "Could not resolve _id from _uuid";
+              }
+            }
+          }
+
+          // ── Log ──────────────────────────────────────────────────────────
+          // Strip `enrichment` from the log entry — it's internal data only.
+          const { enrichment: _enrichment, ...fwdResultForLog } = fwdResult ?? { ok: true };
           const logEntry: LogEntry = {
             ts: Date.now(),
             uuid: submission._uuid,
             id: submission._id,
-            ...result,
+            ...fwdResultForLog,
+            ...(editOk !== undefined ? { editOk } : {}),
+            ...(editHttpStatus !== undefined ? { editHttpStatus } : {}),
+            ...(editError !== undefined ? { editError } : {}),
           };
           await stub.fetch("https://do/log", {
             method: "POST",

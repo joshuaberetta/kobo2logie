@@ -359,6 +359,14 @@ ui.get("/:uid", (c) => {
           <textarea id="describe-prompt" rows="2" placeholder="e.g. Describe this image concisely and factually. Focus on visible damage, location features, and any text present."></textarea>
         </div>
         <div>
+          <label for="extract-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Image analysis prompt<span class="label-hint">for “Analyze” on images — what to extract; use question xpaths as key names</span></label>
+          <textarea id="extract-prompt" rows="2" placeholder="e.g. Extract name, email, phone, company from this business card. Use these exact keys: group1/name, group1/email, group1/phone, group1/company"></textarea>
+        </div>
+        <div>
+          <label for="analyze-audio-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Audio analysis prompt<span class="label-hint">for “Analyze” on audio — what to extract from the transcript; use question xpaths as key names</span></label>
+          <textarea id="analyze-audio-prompt" rows="2" placeholder="e.g. Extract a short summary, key themes, and sentiment. Use these exact keys: group1/summary, group1/key_themes, group1/sentiment"></textarea>
+        </div>
+        <div>
           <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
           <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
             <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
@@ -366,6 +374,10 @@ ui.get("/:uid", (c) => {
             <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="video" /><span>Video</span></label>
             <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="application" /><span>Files (PDF, etc.)</span></label>
           </div>
+        </div>
+        <div>
+          <label class="checkbox-row"><input type="checkbox" id="edit-original" /><span>Edit original submission</span></label>
+          <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Write computed values (transcripts, descriptions, appended fields) back to the original KoboToolbox submission. Requires API token configured during setup.</p>
         </div>
       </div>
     </details>
@@ -414,6 +426,8 @@ ui.get("/:uid", (c) => {
     let configFields = [];      // persisted fields subset
     let configTranscribeQs = []; // persisted transcribe xpath list
     let configDescribeQs = [];   // persisted describe xpath list
+    let configExtractQs = [];    // persisted extract xpath list
+    let configAnalyzeAudioQs = []; // persisted analyzeAudio xpath list
 
     // ── Rendering ────────────────────────────────────────────────────────────
     function renderFieldsList() {
@@ -431,15 +445,25 @@ ui.get("/:uid", (c) => {
           escHtml(q.label) + '</span>' + xpathSpan + '</label>';
         let subRow = '';
         if (q.type === 'audio') {
-          const tChecked = configTranscribeQs.includes(q.xpath) ? ' checked' : '';
+          const analyzeChecked = configAnalyzeAudioQs.includes(q.xpath);
+          const tChecked = (configTranscribeQs.includes(q.xpath) || analyzeChecked) ? ' checked' : '';
+          const tDisabled = analyzeChecked ? ' disabled' : '';
+          const aChecked = analyzeChecked ? ' checked' : '';
           subRow = '<label class="question-sub-item"><input type="checkbox" name="transcribe-q" value="' +
-            escHtml(q.xpath) + '"' + tChecked + '/>' + SPARKLE_SVG + '<span>Transcribe</span>' +
-            '<span class="q-output">\u2192 ' + escHtml(q.xpath) + '_transcript</span></label>';
+            escHtml(q.xpath) + '"' + tChecked + tDisabled + '/>' + SPARKLE_SVG + '<span>Transcribe</span>' +
+            '<span class="q-output">→ ' + escHtml(q.xpath) + '_transcript</span></label>' +
+            '<label class="question-sub-item"><input type="checkbox" name="analyze-audio-q" value="' +
+            escHtml(q.xpath) + '"' + aChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
+            '<span class="q-output">→ (JSON fields)</span></label>';
         } else if (q.type === 'image' || q.type === 'photo') {
           const dChecked = configDescribeQs.includes(q.xpath) ? ' checked' : '';
+          const eChecked = configExtractQs.includes(q.xpath) ? ' checked' : '';
           subRow = '<label class="question-sub-item"><input type="checkbox" name="describe-q" value="' +
             escHtml(q.xpath) + '"' + dChecked + '/>' + SPARKLE_SVG + '<span>Describe</span>' +
-            '<span class="q-output">\u2192 ' + escHtml(q.xpath) + '_description</span></label>';
+            '<span class="q-output">→ ' + escHtml(q.xpath) + '_description</span></label>' +
+            '<label class="question-sub-item"><input type="checkbox" name="extract-q" value="' +
+            escHtml(q.xpath) + '"' + eChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
+            '<span class="q-output">→ (JSON fields)</span></label>';
         }
         return subRow ? '<div>' + mainRow + subRow + '</div>' : mainRow;
       }).join('');
@@ -451,11 +475,22 @@ ui.get("/:uid", (c) => {
     }
 
     function getSelectedAudioQs() {
-      return Array.from(document.querySelectorAll('#fields-list input[name="transcribe-q"]:checked')).map(cb => cb.value);
+      // Include both explicitly checked and disabled-but-forced-on transcribe checkboxes
+      return Array.from(document.querySelectorAll('#fields-list input[name="transcribe-q"]'))
+        .filter(cb => cb.checked || cb.disabled)
+        .map(cb => cb.value);
     }
 
     function getSelectedImageQs() {
       return Array.from(document.querySelectorAll('#fields-list input[name="describe-q"]:checked')).map(cb => cb.value);
+    }
+
+    function getSelectedExtractQs() {
+      return Array.from(document.querySelectorAll('#fields-list input[name="extract-q"]:checked')).map(cb => cb.value);
+    }
+
+    function getSelectedAnalyzeAudioQs() {
+      return Array.from(document.querySelectorAll('#fields-list input[name="analyze-audio-q"]:checked')).map(cb => cb.value);
     }
 
     function selectAllFields() {
@@ -483,7 +518,26 @@ ui.get("/:uid", (c) => {
       btn.innerHTML = hidden ? '&#9660;' : '&#9654;';
     }
 
-    document.getElementById('fields-list').addEventListener('change', updateFieldsCount);
+    document.getElementById('fields-list').addEventListener('change', function(e) {
+      updateFieldsCount();
+      // If an "Analyze" checkbox for audio changes, sync the sibling "Transcribe" checkbox
+      const target = e.target;
+      if (target && target.name === 'analyze-audio-q') {
+        // The structure is: <div><label.question-item/><label.question-sub-item/><label.question-sub-item/></div>
+        const container = target.closest('div');
+        if (container) {
+          const transcribeBox = container.querySelector('input[name="transcribe-q"][value="' + CSS.escape(target.value) + '"]');
+          if (transcribeBox) {
+            if (target.checked) {
+              transcribeBox.checked = true;
+              transcribeBox.disabled = true;
+            } else {
+              transcribeBox.disabled = false;
+            }
+          }
+        }
+      }
+    });
 
     // ── Survey load (auto on page load) ──────────────────────────────────────
     async function loadSurvey() {
@@ -547,9 +601,6 @@ ui.get("/:uid", (c) => {
         if (data.transcribe?.translateTo) {
           document.getElementById('transcribe-translate').value = data.transcribe.translateTo;
         }
-        if (data.describe?.prompt) {
-          document.getElementById('describe-prompt').value = data.describe.prompt;
-        }
         if (Array.isArray(data.forwardMedia) && data.forwardMedia.length > 0) {
           document.querySelectorAll('input[name="fwd-media"]').forEach(cb => {
             cb.checked = data.forwardMedia.includes(cb.value);
@@ -562,6 +613,22 @@ ui.get("/:uid", (c) => {
         if (data.describe && Array.isArray(data.describe.questions)) {
           configDescribeQs = data.describe.questions;
         }
+        if (data.describe?.prompt) {
+          document.getElementById('describe-prompt').value = data.describe.prompt;
+        }
+        if (data.extract && Array.isArray(data.extract.questions)) {
+          configExtractQs = data.extract.questions;
+        }
+        if (data.extract?.prompt) {
+          document.getElementById('extract-prompt').value = data.extract.prompt;
+        }
+        if (data.analyzeAudio && Array.isArray(data.analyzeAudio.questions)) {
+          configAnalyzeAudioQs = data.analyzeAudio.questions;
+        }
+        if (data.analyzeAudio?.prompt) {
+          document.getElementById('analyze-audio-prompt').value = data.analyzeAudio.prompt;
+        }
+        document.getElementById('edit-original').checked = !!data.editOriginal;
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
       } catch {}
     }
@@ -574,6 +641,7 @@ ui.get("/:uid", (c) => {
       const checkedMedia = Array.from(document.querySelectorAll('input[name="fwd-media"]:checked')).map(cb => cb.value);
       // null = forward all; array = restrict to checked types
       const forwardMedia = checkedMedia.length > 0 ? checkedMedia : null;
+      const editOriginal = document.getElementById('edit-original').checked;
       const selected = getSelectedFields();
       // _uuid is always included; treat "every non-locked question checked" as "forward all" (empty array)
       const allChecked = allQuestions.length > 0 && selected.length === allQuestions.length;
@@ -593,6 +661,16 @@ ui.get("/:uid", (c) => {
       const describe = selectedImages.length > 0
         ? { questions: selectedImages, ...(describePrompt ? { prompt: describePrompt } : {}) }
         : null;
+      const selectedExtract = getSelectedExtractQs();
+      const extractPrompt = document.getElementById('extract-prompt').value.trim();
+      const extract = selectedExtract.length > 0
+        ? { questions: selectedExtract, ...(extractPrompt ? { prompt: extractPrompt } : {}) }
+        : null;
+      const selectedAnalyzeAudio = getSelectedAnalyzeAudioQs();
+      const analyzeAudioPrompt = document.getElementById('analyze-audio-prompt').value.trim();
+      const analyzeAudio = selectedAnalyzeAudio.length > 0
+        ? { questions: selectedAnalyzeAudio, ...(analyzeAudioPrompt ? { prompt: analyzeAudioPrompt } : {}) }
+        : null;
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
       setStatus('', '');
@@ -600,7 +678,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia, appendValues }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, forwardMedia, appendValues, editOriginal }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
@@ -656,6 +734,11 @@ ui.get("/:uid", (c) => {
         try { pretty = JSON.stringify(JSON.parse(e.responseBody), null, 2); } catch {}
         rows += '<div class="modal-row"><span class="modal-label">Response body</span><pre class="modal-pre">' + escHtml(pretty) + (e.responseBody.length >= 2048 ? '\\n\u2026 (truncated at 2 KB)' : '') + '</pre></div>';
       }
+      if (e.editOk !== undefined) {
+        rows += '<div class="modal-row"><span class="modal-label">Edit result</span><span class="modal-value">' + (e.editOk ? '\u2713 Written back' : '\u2717 Failed') + '</span></div>';
+        if (e.editHttpStatus != null) rows += '<div class="modal-row"><span class="modal-label">Edit HTTP</span><span class="modal-value">HTTP ' + escHtml(String(e.editHttpStatus)) + '</span></div>';
+        if (e.editError) rows += '<div class="modal-row"><span class="modal-label">Edit error</span><pre class="modal-pre">' + escHtml(e.editError) + '</pre></div>';
+      }
       document.getElementById('modal-title').textContent = e.ok ? '\u2713 Submission forwarded' : '\u2717 Forwarding failed';
       document.getElementById('modal-body').innerHTML = rows;
       document.getElementById('log-modal').classList.add('open');
@@ -675,12 +758,18 @@ ui.get("/:uid", (c) => {
         const badge = e.ok
           ? '<span class="log-badge ok">\u2713 OK</span>'
           : '<span class="log-badge fail">\u2717 Failed</span>';
+        const editBadge = e.editOk === true
+          ? '<span class="log-badge ok">\u2713 OK</span>'
+          : e.editOk === false
+            ? '<span class="log-badge fail">\u2717 Fail</span>'
+            : '\u2014';
         const httpCell = e.httpStatus != null ? escHtml(String(e.httpStatus)) : '\u2014';
         const subId = escHtml(e.uuid ? e.uuid.slice(0, 8) + '\u2026' : (e.id != null ? String(e.id) : '\u2014'));
         return '<tr>' +
           '<td>' + escHtml(timeStr) + '</td>' +
           '<td title="' + escHtml(e.uuid ?? '') + '">' + subId + '</td>' +
           '<td>' + badge + '</td>' +
+          '<td>' + editBadge + '</td>' +
           '<td style="color:#6b7280">' + httpCell + '</td>' +
           '<td><button type="button" class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button></td>' +
           '</tr>';
@@ -730,7 +819,7 @@ ui.get("/:uid", (c) => {
         }
         container.innerHTML =
           '<table class="log-table"><thead><tr>' +
-          '<th>Time</th><th>Submission ID</th><th>Status</th><th>HTTP</th><th></th>' +
+          '<th>Time</th><th>Submission ID</th><th>Fwd</th><th>Edit</th><th>HTTP</th><th></th>' +
           '</tr></thead><tbody>' + renderLogRows(logEntries, 0) + '</tbody></table>';
         if (logHasMore) {
           container.insertAdjacentHTML('beforeend',

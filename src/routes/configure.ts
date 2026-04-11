@@ -199,8 +199,11 @@ configure.get("/project/:uid", async (c) => {
         fields?: string[];
         transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
         describe?: { questions: string[]; model?: string; prompt?: string };
+        extract?: { questions: string[]; model?: string; prompt?: string };
+        analyzeAudio?: { questions: string[]; model?: string; prompt?: string };
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
+        editOriginal?: boolean;
       })
     : {};
   return c.json({
@@ -210,8 +213,11 @@ configure.get("/project/:uid", async (c) => {
     fields: config.fields ?? [],
     transcribe: config.transcribe ?? null,
     describe: config.describe ?? null,
+    extract: config.extract ?? null,
+    analyzeAudio: config.analyzeAudio ?? null,
     forwardMedia: config.forwardMedia ?? null,
     appendValues: config.appendValues ?? [],
+    editOriginal: config.editOriginal ?? false,
   });
 });
 
@@ -219,14 +225,17 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, describe, forwardMedia, appendValues } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, forwardMedia, appendValues, editOriginal } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
     describe?: { questions: string[]; model?: string; prompt?: string } | null;
+    extract?: { questions: string[]; model?: string; prompt?: string } | null;
+    analyzeAudio?: { questions: string[]; model?: string; prompt?: string } | null;
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
+    editOriginal?: boolean;
   }>();
 
   if (forwardUrl) {
@@ -274,6 +283,38 @@ configure.post("/project/:uid", async (c) => {
     };
   }
 
+  // Validate extract config if provided
+  let safeExtract: { questions: string[]; model?: string; prompt?: string } | undefined;
+  if (extract != null) {
+    if (!Array.isArray(extract.questions)) {
+      return c.json({ error: "extract.questions must be an array" }, 400);
+    }
+    const safeQuestions = extract.questions
+      .map((q) => String(q).trim())
+      .filter(Boolean);
+    safeExtract = {
+      questions: safeQuestions,
+      ...(extract.model ? { model: String(extract.model).trim() } : {}),
+      ...(extract.prompt ? { prompt: String(extract.prompt).trim() } : {}),
+    };
+  }
+
+  // Validate analyzeAudio config if provided
+  let safeAnalyzeAudio: { questions: string[]; model?: string; prompt?: string } | undefined;
+  if (analyzeAudio != null) {
+    if (!Array.isArray(analyzeAudio.questions)) {
+      return c.json({ error: "analyzeAudio.questions must be an array" }, 400);
+    }
+    const safeQuestions = analyzeAudio.questions
+      .map((q) => String(q).trim())
+      .filter(Boolean);
+    safeAnalyzeAudio = {
+      questions: safeQuestions,
+      ...(analyzeAudio.model ? { model: String(analyzeAudio.model).trim() } : {}),
+      ...(analyzeAudio.prompt ? { prompt: String(analyzeAudio.prompt).trim() } : {}),
+    };
+  }
+
   const safeFields = Array.isArray(fields)
     ? fields.map((f) => String(f).trim()).filter(Boolean)
     : [];
@@ -295,7 +336,7 @@ configure.post("/project/:uid", async (c) => {
       .filter((e) => e.key.length > 0);
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0)) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -306,6 +347,7 @@ configure.post("/project/:uid", async (c) => {
       forwardUrl: safeUrl,
       forwardToken: safeToken,
       fields: safeFields,
+      editOriginal: editOriginal === true,
     };
     // transcribe: null means "clear", undefined means "don't touch"
     if (transcribe === null) {
@@ -318,6 +360,18 @@ configure.post("/project/:uid", async (c) => {
       delete next.describe;
     } else if (safeDescribe !== undefined) {
       next.describe = safeDescribe;
+    }
+    // extract: null means "clear", undefined means "don't touch"
+    if (extract === null) {
+      delete next.extract;
+    } else if (safeExtract !== undefined) {
+      next.extract = safeExtract;
+    }
+    // analyzeAudio: null means "clear", undefined means "don't touch"
+    if (analyzeAudio === null) {
+      delete next.analyzeAudio;
+    } else if (safeAnalyzeAudio !== undefined) {
+      next.analyzeAudio = safeAnalyzeAudio;
     }
     // forwardMedia: null = forward all (clear restriction), array = restrict
     if (forwardMedia === null) {
