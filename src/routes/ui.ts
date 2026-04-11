@@ -199,12 +199,13 @@ ui.get("/:uid", (c) => {
     input[type="url"], input[type="text"], input[type="password"] { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .95rem; outline: none; transition: border-color .15s; }
     input[type="url"]:focus, input[type="text"]:focus, input[type="password"]:focus { border-color: #2563eb; }
 
-    .survey-status { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: #6b7280; margin-bottom: .4rem; min-height: 1rem; }
-    .survey-status.error { color: #dc2626; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes shimmer { 0%,100% { opacity: .45; } 50% { opacity: .85; } }
+    .q-skeleton-row { display: flex; align-items: center; gap: .5rem; padding: .38rem .25rem; }
+    .q-skeleton-bar { background: #e5e7eb; border-radius: 4px; animation: shimmer 1.5s ease-in-out infinite; }
     .spinner { width: .85rem; height: .85rem; border: 2px solid #d1d5db; border-top-color: #6b7280; border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
     .field-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .4rem; }
-    .field-list-header label { margin-bottom: 0; }
+    .field-list-header label { margin-bottom: 0; font-size: 1.05rem; font-weight: 700; color: #111827; }
     .select-btn { background: none; border: 1.5px solid #d1d5db; border-radius: 6px; font-size: .76rem; font-weight: 600; color: #6b7280; padding: .2rem .55rem; cursor: pointer; }
     .select-btn:hover { border-color: #9ca3af; color: #374151; }
     .fields-count { font-size: .74rem; font-weight: 600; color: #6b7280; background: #f3f4f6; border-radius: 10px; padding: .1rem .5rem; margin-left: .35rem; white-space: nowrap; }
@@ -220,7 +221,7 @@ ui.get("/:uid", (c) => {
     .transcribe-sub { display: flex; flex-direction: column; gap: 1rem; margin-top: .9rem; }
     .load-status { font-size: .78rem; margin-top: .35rem; color: #6b7280; min-height: 1.1rem; }
     .load-status.error { color: #dc2626; }
-    .question-list-box { max-height: 19rem; overflow-y: auto; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: .3rem .5rem; display: flex; flex-direction: column; gap: 0; }
+    .question-list-box { min-height: 7rem; max-height: 19rem; overflow-y: auto; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: .3rem .5rem; display: flex; flex-direction: column; gap: 0; }
     .q-row { display: flex; align-items: center; gap: .5rem; padding: .2rem .25rem; border-radius: 6px; font-size: .85rem; }
     .q-row:hover { background: #f9fafb; }
     .q-row input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
@@ -379,18 +380,16 @@ ui.get("/:uid", (c) => {
       </div>
     </details>
 
-    <div>
-      <div id="survey-status" class="survey-status"></div>
+    <div style="margin-top:1.75rem">
       <div class="field-list-header">
-        <label style="margin-bottom:0">Fields subset<span class="label-hint">optional — uncheck fields to exclude them</span></label>
+        <label style="margin-bottom:0">Fields</label>
         <span style="display:flex;gap:.4rem;align-items:center;flex-shrink:0">
           <span id="fields-count" class="fields-count"></span>
           <button type="button" class="select-btn" onclick="selectAllFields()">Select all</button>
           <button type="button" class="select-btn" onclick="deselectAllFields()">Deselect all</button>
-          <button type="button" class="fields-toggle" id="fields-toggle" onclick="toggleFieldsList()" title="Show/hide fields">&#9660;</button>
         </span>
       </div>
-      <div id="fields-list" class="question-list-box"></div>
+      <div id="fields-list" class="question-list-box" aria-live="polite"></div>
     </div>
 
     <div class="log-header">
@@ -401,7 +400,7 @@ ui.get("/:uid", (c) => {
     </div>
     <div class="log-body" id="log-body">
       <div class="log-scroll" id="log-scroll">
-        <div id="logs-container"><p class="log-empty">Loading&hellip;</p></div>
+        <div id="logs-container"></div>
       </div>
     </div>
   </div>
@@ -649,14 +648,6 @@ ui.get("/:uid", (c) => {
       badge.textContent = total > 0 ? checked + ' / ' + total : '';
     }
 
-    function toggleFieldsList() {
-      const list = document.getElementById('fields-list');
-      const btn = document.getElementById('fields-toggle');
-      const hidden = list.style.display === 'none';
-      list.style.display = hidden ? '' : 'none';
-      btn.innerHTML = hidden ? '&#9660;' : '&#9654;';
-    }
-
     document.addEventListener('input', markDirty);
     document.addEventListener('change', markDirty);
     document.addEventListener('click', function(e) {
@@ -701,26 +692,34 @@ ui.get("/:uid", (c) => {
     });
 
     // ── Survey load (auto on page load) ──────────────────────────────────────
+    function fieldSkeletonHtml() {
+      return [72, 55, 85, 48, 68].map(function(w) {
+        return '<div class="q-skeleton-row">' +
+          '<div class="q-skeleton-bar" style="width:1rem;height:1rem;border-radius:3px;flex-shrink:0"></div>' +
+          '<div class="q-skeleton-bar" style="width:' + w + '%;height:.7rem"></div>' +
+          '</div>';
+      }).join('');
+    }
+
     async function loadSurvey() {
-      const statusEl = document.getElementById('survey-status');
-      statusEl.className = 'survey-status';
-      statusEl.innerHTML = '<span class="spinner"></span><span>Loading form questions\u2026</span>';
+      const list = document.getElementById('fields-list');
+      list.innerHTML = fieldSkeletonHtml();
       try {
         const res = await fetch('/api/configure/survey/' + UID);
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
-          statusEl.className = 'survey-status error';
-          statusEl.textContent = 'Could not load questions: ' + (d.error ?? res.status);
+          list.innerHTML = '<p class="log-empty" style="color:#dc2626">Could not load questions: ' + escHtml(d.error ?? String(res.status)) + '</p>';
           return;
         }
         const data = await res.json();
         allQuestions = data.questions ?? [];
-        statusEl.className = 'survey-status';
-        statusEl.textContent = '';
+        if (allQuestions.length === 0) {
+          list.innerHTML = '<p class="log-empty">No questions found in this form.</p>';
+          return;
+        }
         renderFieldsList();
       } catch {
-        statusEl.className = 'survey-status error';
-        statusEl.textContent = 'Could not load form questions.';
+        list.innerHTML = '<p class="log-empty" style="color:#dc2626">Could not load form questions.</p>';
       }
     }
 
