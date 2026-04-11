@@ -50,7 +50,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, forwardMedia, appendValues, editOriginal, server } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, server } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
@@ -58,12 +58,13 @@ hook.post("/:formUID", async (c) => {
       describe?: { questions: string[]; model?: string; prompt?: string };
       extract?: { questions: string[]; model?: string; prompt?: string };
       analyzeAudio?: { questions: string[]; model?: string; prompt?: string };
+      extractText?: { questions: string[]; model?: string; prompt?: string };
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
       editOriginal?: boolean;
       server?: string;
     };
-    if (forwardUrl || editOriginal || transcribe || describe || extract || analyzeAudio) {
+    if (forwardUrl || editOriginal || transcribe || describe || extract || analyzeAudio || extractText) {
       const submission = body as KoboSubmission;
 
       // Build a filtered payload if the user has specified a fields subset (forwarding only)
@@ -106,7 +107,7 @@ hook.post("/:formUID", async (c) => {
         (async () => {
           // ── Step 1: Forward submission (and/or enrich) ───────────────────
           let fwdResult: Awaited<ReturnType<typeof forwardSubmission>> | undefined;
-          if (forwardUrl || transcribe || describe || extract || analyzeAudio) {
+          if (forwardUrl || transcribe || describe || extract || analyzeAudio || extractText) {
             fwdResult = await forwardSubmission(
               submission,
               forwardUrl,
@@ -122,7 +123,8 @@ hook.post("/:formUID", async (c) => {
               describe || undefined,
               forwardMedia || undefined,
               extract || undefined,
-              analyzeAudio || undefined
+              analyzeAudio || undefined,
+              extractText || undefined
             );
           }
 

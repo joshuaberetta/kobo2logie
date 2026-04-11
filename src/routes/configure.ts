@@ -201,6 +201,7 @@ configure.get("/project/:uid", async (c) => {
         describe?: { questions: string[]; model?: string; prompt?: string };
         extract?: { questions: string[]; model?: string; prompt?: string };
         analyzeAudio?: { questions: string[]; model?: string; prompt?: string };
+        extractText?: { questions: string[]; model?: string; prompt?: string };
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
         editOriginal?: boolean;
@@ -215,6 +216,7 @@ configure.get("/project/:uid", async (c) => {
     describe: config.describe ?? null,
     extract: config.extract ?? null,
     analyzeAudio: config.analyzeAudio ?? null,
+    extractText: config.extractText ?? null,
     forwardMedia: config.forwardMedia ?? null,
     appendValues: config.appendValues ?? [],
     editOriginal: config.editOriginal ?? false,
@@ -225,7 +227,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, forwardMedia, appendValues, editOriginal } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
@@ -233,6 +235,7 @@ configure.post("/project/:uid", async (c) => {
     describe?: { questions: string[]; model?: string; prompt?: string } | null;
     extract?: { questions: string[]; model?: string; prompt?: string } | null;
     analyzeAudio?: { questions: string[]; model?: string; prompt?: string } | null;
+    extractText?: { questions: string[]; model?: string; prompt?: string } | null;
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
     editOriginal?: boolean;
@@ -315,6 +318,22 @@ configure.post("/project/:uid", async (c) => {
     };
   }
 
+  // Validate extractText config if provided
+  let safeExtractText: { questions: string[]; model?: string; prompt?: string } | undefined;
+  if (extractText != null) {
+    if (!Array.isArray(extractText.questions)) {
+      return c.json({ error: "extractText.questions must be an array" }, 400);
+    }
+    const safeQuestions = extractText.questions
+      .map((q) => String(q).trim())
+      .filter(Boolean);
+    safeExtractText = {
+      questions: safeQuestions,
+      ...(extractText.model ? { model: String(extractText.model).trim() } : {}),
+      ...(extractText.prompt ? { prompt: String(extractText.prompt).trim() } : {}),
+    };
+  }
+
   const safeFields = Array.isArray(fields)
     ? fields.map((f) => String(f).trim()).filter(Boolean)
     : [];
@@ -336,7 +355,7 @@ configure.post("/project/:uid", async (c) => {
       .filter((e) => e.key.length > 0);
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeDescribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -372,6 +391,12 @@ configure.post("/project/:uid", async (c) => {
       delete next.analyzeAudio;
     } else if (safeAnalyzeAudio !== undefined) {
       next.analyzeAudio = safeAnalyzeAudio;
+    }
+    // extractText: null means "clear", undefined means "don't touch"
+    if (extractText === null) {
+      delete next.extractText;
+    } else if (safeExtractText !== undefined) {
+      next.extractText = safeExtractText;
     }
     // forwardMedia: null = forward all (clear restriction), array = restrict
     if (forwardMedia === null) {

@@ -4,6 +4,7 @@ import { transcribeAudio } from "./transcribe.js";
 import { describeImage } from "./describe.js";
 import { extractFields } from "./extract.js";
 import { analyzeAudioText } from "./analyzeAudio.js";
+import { extractTextFields } from "./extractText.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
@@ -59,7 +60,8 @@ export async function forwardSubmission(
   describeConfig?: { questions: string[]; model?: string; prompt?: string },
   forwardMedia?: string[],
   extractConfig?: { questions: string[]; model?: string; prompt?: string },
-  analyzeAudioConfig?: { questions: string[]; model?: string; prompt?: string }
+  analyzeAudioConfig?: { questions: string[]; model?: string; prompt?: string },
+  extractTextConfig?: { questions: string[]; model?: string; prompt?: string }
 ): Promise<ForwardResult> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
@@ -286,6 +288,34 @@ export async function forwardSubmission(
             }
           } catch (err) {
             console.error(`[extract] Error extracting from "${questionName}":`, err);
+          }
+        })
+      );
+    }
+
+    // ── Text field extraction ─────────────────────────────────────────────
+    if (extractTextConfig && openaiApiKey && extractTextConfig.questions.length > 0) {
+      await Promise.all(
+        extractTextConfig.questions.map(async (questionName) => {
+          try {
+            const text = (submission as Record<string, unknown>)[questionName];
+            if (typeof text !== "string" || !text.trim()) return;
+            const extracted = await extractTextFields(
+              text,
+              openaiApiKey,
+              extractTextConfig.model,
+              extractTextConfig.prompt
+            );
+            if (extracted) {
+              for (const [k, v] of Object.entries(extracted)) {
+                if (k !== "_uuid") {
+                  payload[k] = v;
+                  enrichment[k] = v;
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[extract-text] Error extracting from "${questionName}":`, err);
           }
         })
       );

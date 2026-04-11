@@ -367,6 +367,10 @@ ui.get("/:uid", (c) => {
           <textarea id="analyze-audio-prompt" rows="2" placeholder="e.g. Extract a short summary, key themes, and sentiment. Use these exact keys: group1/summary, group1/key_themes, group1/sentiment"></textarea>
         </div>
         <div>
+          <label for="extract-text-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Text field analysis prompt<span class="label-hint">for "Analyze" on text fields — what to extract; use question xpaths as key names</span></label>
+          <textarea id="extract-text-prompt" rows="2" placeholder="e.g. Extract names of people, locations, and organizations mentioned. Use these exact keys: group1/people, group1/locations, group1/organizations"></textarea>
+        </div>
+        <div>
           <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
           <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
             <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
@@ -428,6 +432,7 @@ ui.get("/:uid", (c) => {
     let configDescribeQs = [];   // persisted describe xpath list
     let configExtractQs = [];    // persisted extract xpath list
     let configAnalyzeAudioQs = []; // persisted analyzeAudio xpath list
+    let configExtractTextQs = []; // persisted extractText xpath list
 
     // ── Rendering ────────────────────────────────────────────────────────────
     function renderFieldsList() {
@@ -464,6 +469,11 @@ ui.get("/:uid", (c) => {
             '<label class="question-sub-item"><input type="checkbox" name="extract-q" value="' +
             escHtml(q.xpath) + '"' + eChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
             '<span class="q-output">→ (JSON fields)</span></label>';
+        } else if (q.type === 'text') {
+          const tChecked = configExtractTextQs.includes(q.xpath) ? ' checked' : '';
+          subRow = '<label class="question-sub-item"><input type="checkbox" name="extract-text-q" value="' +
+            escHtml(q.xpath) + '"' + tChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' +
+            '<span class="q-output">→ (JSON fields)</span></label>';
         }
         return subRow ? '<div>' + mainRow + subRow + '</div>' : mainRow;
       }).join('');
@@ -491,6 +501,10 @@ ui.get("/:uid", (c) => {
 
     function getSelectedAnalyzeAudioQs() {
       return Array.from(document.querySelectorAll('#fields-list input[name="analyze-audio-q"]:checked')).map(cb => cb.value);
+    }
+
+    function getSelectedExtractTextQs() {
+      return Array.from(document.querySelectorAll('#fields-list input[name="extract-text-q"]:checked')).map(cb => cb.value);
     }
 
     function selectAllFields() {
@@ -628,6 +642,12 @@ ui.get("/:uid", (c) => {
         if (data.analyzeAudio?.prompt) {
           document.getElementById('analyze-audio-prompt').value = data.analyzeAudio.prompt;
         }
+        if (data.extractText && Array.isArray(data.extractText.questions)) {
+          configExtractTextQs = data.extractText.questions;
+        }
+        if (data.extractText?.prompt) {
+          document.getElementById('extract-text-prompt').value = data.extractText.prompt;
+        }
         document.getElementById('edit-original').checked = !!data.editOriginal;
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
       } catch {}
@@ -671,6 +691,11 @@ ui.get("/:uid", (c) => {
       const analyzeAudio = selectedAnalyzeAudio.length > 0
         ? { questions: selectedAnalyzeAudio, ...(analyzeAudioPrompt ? { prompt: analyzeAudioPrompt } : {}) }
         : null;
+      const selectedExtractText = getSelectedExtractTextQs();
+      const extractTextPrompt = document.getElementById('extract-text-prompt').value.trim();
+      const extractText = selectedExtractText.length > 0
+        ? { questions: selectedExtractText, ...(extractTextPrompt ? { prompt: extractTextPrompt } : {}) }
+        : null;
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
       setStatus('', '');
@@ -678,7 +703,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, forwardMedia, appendValues, editOriginal }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, describe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
