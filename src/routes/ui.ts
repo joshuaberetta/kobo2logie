@@ -270,6 +270,9 @@ ui.get("/:uid", (c) => {
     .log-detail-btn:hover { border-color: #9ca3af; color: #374151; }
     .log-load-more { width: 100%; padding: .45rem; background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: .78rem; font-weight: 600; color: #6b7280; cursor: pointer; margin-top: .4rem; }
     .log-load-more:hover { border-color: #9ca3af; color: #374151; }
+    .log-skel-row td { padding: .38rem .5rem; border-bottom: 1px solid #f3f4f6; }
+    .log-skel-row:last-child td { border-bottom: none; }
+    .log-skel-bar { display: inline-block; height: .65rem; border-radius: 4px; background: #e5e7eb; animation: shimmer 1.5s ease-in-out infinite; vertical-align: middle; }
     /* Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; padding: 1.5rem; }
     .modal-overlay.open { display: flex; }
@@ -963,10 +966,26 @@ ui.get("/:uid", (c) => {
       } catch {}
     }
 
+    function logSkeletonHtml() {
+      const widths = [[55,30],[60,28],[50,32],[58,29],[52,31]];
+      const headerRow = '<thead><tr><th>Time</th><th>Submission ID</th><th>Fwd</th><th>Edit</th><th>HTTP</th><th></th></tr></thead>';
+      const rows = widths.map(function(w) {
+        return '<tr class="log-skel-row">' +
+          '<td><span class="log-skel-bar" style="width:' + w[0] + '%"></span></td>' +
+          '<td><span class="log-skel-bar" style="width:' + w[1] + '%"></span></td>' +
+          '<td><span class="log-skel-bar" style="width:2.2rem"></span></td>' +
+          '<td><span class="log-skel-bar" style="width:.8rem"></span></td>' +
+          '<td><span class="log-skel-bar" style="width:1.8rem"></span></td>' +
+          '<td></td>' +
+          '</tr>';
+      }).join('');
+      return '<table class="log-table">' + headerRow + '<tbody>' + rows + '</tbody></table>';
+    }
+
     async function refreshLogs(reset) {
       if (reset) { logEntries = []; logOffset = 0; logHasMore = false; }
       const container = document.getElementById('logs-container');
-      container.innerHTML = '';
+      container.innerHTML = logSkeletonHtml();
       try {
         const res = await fetch('/api/logs/' + UID + '?offset=0&limit=' + LOG_PAGE);
         if (!res.ok) { container.innerHTML = '<p class="log-empty">Could not load logs.</p>'; return; }
