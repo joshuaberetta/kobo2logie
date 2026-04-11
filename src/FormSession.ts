@@ -1,6 +1,8 @@
 import type { KoboSubmission } from "./lib/kobo.js";
+import type { LogEntry } from "./types.js";
 
 const MAX_BUFFER = 50;
+const MAX_LOG = 100;
 const IDLE_ALARM_MS = 60_000; // 60 s after last connection closes
 
 interface Env {
@@ -24,6 +26,14 @@ export class FormSession implements DurableObject {
 
     if (url.pathname === "/push" && request.method === "POST") {
       return this.handlePush(request);
+    }
+
+    if (url.pathname === "/log" && request.method === "POST") {
+      return this.handleLog(request);
+    }
+
+    if (url.pathname === "/logs" && request.method === "GET") {
+      return this.handleGetLogs(request);
     }
 
     return new Response("Not found", { status: 404 });
@@ -99,6 +109,33 @@ export class FormSession implements DurableObject {
     }
 
     return new Response("OK", { status: 200 });
+  }
+
+  // ── Log (submission forward results) ──────────────────────────────────────
+
+  private async handleLog(request: Request): Promise<Response> {
+    let entry: LogEntry;
+    try {
+      entry = await request.json<LogEntry>();
+    } catch {
+      return new Response("Invalid JSON", { status: 400 });
+    }
+    const logs = (await this.state.storage.get<LogEntry[]>("logs")) ?? [];
+    logs.unshift(entry); // newest first
+    if (logs.length > MAX_LOG) logs.length = MAX_LOG;
+    await this.state.storage.put("logs", logs);
+    return new Response("OK", { status: 200 });
+  }
+
+  private async handleGetLogs(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "10", 10) || 10));
+    const logs = (await this.state.storage.get<LogEntry[]>("logs")) ?? [];
+    const entries = logs.slice(offset, offset + limit);
+    return new Response(JSON.stringify({ entries, hasMore: offset + limit < logs.length, total: logs.length }), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   // ── Alarm (idle cleanup) ─────────────────────────────────────────────────

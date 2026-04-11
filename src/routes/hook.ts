@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env } from "../types.js";
+import type { Env, LogEntry } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
 
@@ -64,7 +64,9 @@ hook.post("/:formUID", async (c) => {
       let jsonPayload: Record<string, unknown> | undefined;
       if (fields && fields.length > 0) {
         const filtered: Record<string, unknown> = {};
-        for (const f of fields) {
+        // _uuid is always included regardless of the fields filter
+        const fieldsWithUuid = fields.includes("_uuid") ? fields : ["_uuid", ...fields];
+        for (const f of fieldsWithUuid) {
           if (Object.prototype.hasOwnProperty.call(submission, f)) {
             filtered[f] = (submission as Record<string, unknown>)[f];
           }
@@ -81,21 +83,34 @@ hook.post("/:formUID", async (c) => {
       const openaiApiKey = c.env.OPENAI_API_KEY || undefined;
 
       c.executionCtx.waitUntil(
-        forwardSubmission(
-          submission,
-          forwardUrl,
-          c.env.DEFAULT_KOBO_BASE_URL,
-          {
-            global: c.env.KOBO_API_TOKEN_GLOBAL,
-            eu: c.env.KOBO_API_TOKEN_EU,
-          },
-          jsonPayload,
-          forwardToken || undefined,
-          transcribe || undefined,
-          openaiApiKey,
-          describe || undefined,
-          forwardMedia || undefined
-        )
+        (async () => {
+          const result = await forwardSubmission(
+            submission,
+            forwardUrl,
+            c.env.DEFAULT_KOBO_BASE_URL,
+            {
+              global: c.env.KOBO_API_TOKEN_GLOBAL,
+              eu: c.env.KOBO_API_TOKEN_EU,
+            },
+            jsonPayload,
+            forwardToken || undefined,
+            transcribe || undefined,
+            openaiApiKey,
+            describe || undefined,
+            forwardMedia || undefined
+          );
+          const logEntry: LogEntry = {
+            ts: Date.now(),
+            uuid: submission._uuid,
+            id: submission._id,
+            ...result,
+          };
+          await stub.fetch("https://do/log", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(logEntry),
+          });
+        })()
       );
     }
   }

@@ -20,4 +20,17 @@ app.route("/api/stream", stream);
 app.route("/api/media", media);
 app.route("/api/configure", configure);
 
+// Submission log for a form
+app.get("/api/logs/:formUID", async (c) => {
+  const formUID = c.req.param("formUID");
+  const id = c.env.FORM_SESSION.idFromName(formUID);
+  const stub = c.env.FORM_SESSION.get(id);
+  const qs = new URL(c.req.url).search;
+  const res = await stub.fetch("https://do/logs" + qs);
+  return new Response(res.body, {
+    status: res.status,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+
 export default app;

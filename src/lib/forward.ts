@@ -5,6 +5,13 @@ import { describeImage } from "./describe.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
+export interface ForwardResult {
+  ok: boolean;
+  httpStatus?: number;
+  responseBody?: string;
+  error?: string;
+}
+
 function resolveKoboToken(
   koboBaseUrl: string,
   tokens: { global: string; eu: string }
@@ -47,7 +54,7 @@ export async function forwardSubmission(
   openaiApiKey?: string,
   describeConfig?: { questions: string[]; model?: string; prompt?: string },
   forwardMedia?: string[]
-): Promise<void> {
+): Promise<ForwardResult> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
 
@@ -221,12 +228,17 @@ export async function forwardSubmission(
       body: form,
     });
 
+    const responseBody = await fwdRes.text().catch(() => undefined);
+    const truncatedBody = responseBody ? responseBody.slice(0, 2048) : undefined;
     if (!fwdRes.ok) {
       console.error(
         `[forward] External service returned HTTP ${fwdRes.status} for ${forwardUrl}`
       );
+      return { ok: false, httpStatus: fwdRes.status, responseBody: truncatedBody };
     }
+    return { ok: true, httpStatus: fwdRes.status, responseBody: truncatedBody };
   } catch (err) {
     console.error("[forward] Unhandled error in forwardSubmission:", err);
+    return { ok: false, error: String(err) };
   }
 }

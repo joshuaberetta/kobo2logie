@@ -190,6 +190,8 @@ ui.get("/:uid", (c) => {
     .back { display: inline-block; font-size: .82rem; color: #2563eb; text-decoration: none; margin-bottom: 1.5rem; }
     .back:hover { text-decoration: underline; }
     h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: .25rem; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: .25rem; }
+    .page-header-left {}
     .uid-badge { font-family: monospace; font-size: .78rem; background: #f3f4f6; color: #555; padding: .2rem .55rem; border-radius: 5px; display: inline-block; margin-bottom: 1.75rem; }
     .fields { display: flex; flex-direction: column; gap: 1.25rem; }
     label { display: block; font-size: .85rem; font-weight: 600; color: #444; margin-bottom: .4rem; }
@@ -219,7 +221,7 @@ ui.get("/:uid", (c) => {
     .load-status { font-size: .78rem; margin-top: .35rem; color: #6b7280; min-height: 1.1rem; }
     .load-status.error { color: #dc2626; }
     .question-list { display: flex; flex-direction: column; gap: .25rem; }
-    .question-list-box { max-height: 9.5rem; overflow-y: auto; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: .4rem .6rem; display: flex; flex-direction: column; gap: .2rem; }
+    .question-list-box { max-height: 19rem; overflow-y: auto; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: .4rem .6rem; display: flex; flex-direction: column; gap: .2rem; }
     .question-item { display: flex; align-items: baseline; gap: .5rem; font-size: .85rem; cursor: pointer; padding: .15rem 0; }
     .question-item input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; margin-top: .1rem; }
     .question-item .q-label { font-weight: 500; color: #374151; }
@@ -229,12 +231,49 @@ ui.get("/:uid", (c) => {
     .question-sub-item input[type="checkbox"] { width: .85rem; height: .85rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
     .question-sub-item .q-output { font-family: monospace; font-size: .74rem; color: #d1d5db; margin-left: auto; }
 
-    .save-btn { margin-top: .75rem; width: 100%; padding: .7rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .save-row { display: flex; align-items: center; gap: .75rem; padding-top: .35rem; flex-shrink: 0; }
+    .save-btn { padding: .5rem 1.5rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; }
     .save-btn:hover { background: #1d4ed8; }
     .save-btn:disabled { background: #93c5fd; cursor: not-allowed; }
-    .status-msg { margin-top: .9rem; font-size: .85rem; text-align: center; min-height: 1.2rem; }
+    .status-msg { font-size: .85rem; min-height: 1.2rem; }
     .status-msg.success { color: #15803d; }
     .status-msg.error { color: #dc2626; }
+
+    /* Submission log */
+    .log-header { display: flex; align-items: center; justify-content: space-between; margin-top: 2rem; margin-bottom: .5rem; }
+    .log-title-btn { background: none; border: none; padding: 0; font-size: .88rem; font-weight: 700; color: #374151; cursor: pointer; display: flex; align-items: center; gap: .35rem; }
+    .log-title-btn .log-chevron { transition: transform .15s; flex-shrink: 0; }
+    .log-title-btn.collapsed .log-chevron { transform: rotate(-90deg); }
+    .log-actions { display: flex; gap: .4rem; }
+    .log-refresh-btn { background: none; border: 1.5px solid #d1d5db; border-radius: 6px; font-size: .76rem; font-weight: 600; color: #6b7280; padding: .2rem .55rem; cursor: pointer; }
+    .log-refresh-btn:hover { border-color: #9ca3af; color: #374151; }
+    .log-body { overflow: hidden; }
+    .log-scroll { max-height: 26rem; overflow-y: auto; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .log-table th { text-align: left; font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .03em; padding: .3rem .5rem; border-bottom: 1.5px solid #e5e7eb; }
+    .log-table td { padding: .35rem .5rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; color: #374151; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .log-table tr:last-child td { border-bottom: none; }
+    .log-badge { display: inline-block; font-size: .72rem; font-weight: 700; border-radius: 4px; padding: .1rem .4rem; }
+    .log-badge.ok { background: #dcfce7; color: #15803d; }
+    .log-badge.fail { background: #fee2e2; color: #dc2626; }
+    .log-empty { font-size: .82rem; color: #9ca3af; text-align: center; padding: 1rem 0; }
+    .log-detail-btn { background: none; border: 1.5px solid #d1d5db; border-radius: 5px; font-size: .72rem; font-weight: 600; color: #6b7280; padding: .1rem .45rem; cursor: pointer; white-space: nowrap; }
+    .log-detail-btn:hover { border-color: #9ca3af; color: #374151; }
+    .log-load-more { width: 100%; padding: .45rem; background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: .78rem; font-weight: 600; color: #6b7280; cursor: pointer; margin-top: .4rem; }
+    .log-load-more:hover { border-color: #9ca3af; color: #374151; }
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; padding: 1.5rem; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: #fff; border-radius: 12px; max-width: 600px; width: 100%; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem .75rem; border-bottom: 1.5px solid #e5e7eb; flex-shrink: 0; }
+    .modal-title { font-size: .95rem; font-weight: 700; color: #1a1a1a; }
+    .modal-close { background: none; border: none; font-size: 1.25rem; line-height: 1; color: #9ca3af; cursor: pointer; padding: 0 .25rem; }
+    .modal-close:hover { color: #374151; }
+    .modal-body { overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+    .modal-row { display: flex; flex-direction: column; gap: .2rem; }
+    .modal-label { font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
+    .modal-value { font-size: .85rem; color: #1a1a1a; word-break: break-all; }
+    .modal-pre { background: #f3f4f6; border-radius: 6px; padding: .6rem .8rem; font-size: .78rem; font-family: monospace; color: #374151; white-space: pre-wrap; word-break: break-all; margin: 0; max-height: 14rem; overflow-y: auto; }
 
     /* Advanced settings */
     details { margin-top: 1.5rem; border: 1.5px solid #e5e7eb; border-radius: 8px; }
@@ -251,8 +290,16 @@ ui.get("/:uid", (c) => {
 <body>
   <div class="card">
     <a class="back" href="/">← Back</a>
-    <h1>Project settings</h1>
-    <span class="uid-badge">${uid}</span>
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Project settings</h1>
+        <span class="uid-badge">${uid}</span>
+      </div>
+      <div class="save-row">
+        <div class="status-msg" id="status-msg"></div>
+        <button class="save-btn" id="save-btn" onclick="save()">Save</button>
+      </div>
+    </div>
 
     <details id="advanced">
       <summary>Advanced settings</summary>
@@ -322,8 +369,27 @@ ui.get("/:uid", (c) => {
       <div id="fields-list" class="question-list-box"></div>
     </div>
 
-    <button class="save-btn" id="save-btn" onclick="save()">Save</button>
-    <div class="status-msg" id="status-msg"></div>
+    <div class="log-header">
+      <button class="log-title-btn" id="log-toggle" onclick="toggleLog()"><svg class="log-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Submission log</button>
+      <div class="log-actions">
+        <button class="log-refresh-btn" onclick="refreshLogs(true)">Refresh</button>
+      </div>
+    </div>
+    <div class="log-body" id="log-body">
+      <div class="log-scroll" id="log-scroll">
+        <div id="logs-container"><p class="log-empty">Loading&hellip;</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="log-modal" onclick="closeModal(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Submission detail</span>
+        <button class="modal-close" onclick="document.getElementById('log-modal').classList.remove('open')">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
   </div>
 
   <script>
@@ -339,7 +405,9 @@ ui.get("/:uid", (c) => {
       const list = document.getElementById('fields-list');
       if (allQuestions.length === 0) return;
       const hasFilter = configFields.length > 0;
-      list.innerHTML = allQuestions.map(q => {
+      // _uuid is always first and always locked
+      const uuidRow = '<label class="question-item"><input type="checkbox" name="field-locked" value="_uuid" checked disabled style="accent-color:#93c5fd;cursor:not-allowed" /><span class="q-label" style="color:#9ca3af">_uuid</span><span style="font-size:.72rem;color:#d1d5db;margin-left:.4rem">(always included)</span></label>';
+      list.innerHTML = uuidRow + allQuestions.map(q => {
         const checked = (!hasFilter || configFields.includes(q.xpath)) ? ' checked' : '';
         const xpathSpan = (q.label !== q.xpath)
           ? '<span class="q-xpath">' + escHtml(q.xpath) + '</span>' : '';
@@ -467,8 +535,9 @@ ui.get("/:uid", (c) => {
       // null = forward all; array = restrict to checked types
       const forwardMedia = checkedMedia.length > 0 ? checkedMedia : null;
       const selected = getSelectedFields();
-      // Empty array = forward all; treat "every question checked" as "all"
-      const fields = (allQuestions.length > 0 && selected.length === allQuestions.length) ? [] : selected;
+      // _uuid is always included; treat "every non-locked question checked" as "forward all" (empty array)
+      const allChecked = allQuestions.length > 0 && selected.length === allQuestions.length;
+      const fields = allChecked ? [] : ['_uuid', ...selected.filter(f => f !== '_uuid')];
       const selectedAudio = getSelectedAudioQs();
       const transcribePrompt = document.getElementById('transcribe-prompt').value.trim();
       const transcribeTranslate = document.getElementById('transcribe-translate').value.trim();
@@ -517,7 +586,122 @@ ui.get("/:uid", (c) => {
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    (async () => { await loadConfig(); loadSurvey(); })();
+    // ── Submission log ────────────────────────────────────────────────────────
+    const LOG_PAGE = 10;
+    let logEntries = [];
+    let logOffset = 0;
+    let logHasMore = false;
+    let logCollapsed = false;
+
+    function toggleLog() {
+      logCollapsed = !logCollapsed;
+      document.getElementById('log-body').style.display = logCollapsed ? 'none' : '';
+      document.getElementById('log-toggle').classList.toggle('collapsed', logCollapsed);
+    }
+
+    function openLogDetail(idx) {
+      const e = logEntries[idx];
+      if (!e) return;
+      const d = new Date(e.ts);
+      const timeStr = d.toLocaleString();
+      let rows = '';
+      rows += '<div class="modal-row"><span class="modal-label">Time</span><span class="modal-value">' + escHtml(timeStr) + '</span></div>';
+      if (e.uuid) rows += '<div class="modal-row"><span class="modal-label">UUID</span><span class="modal-value">' + escHtml(e.uuid) + '</span></div>';
+      if (e.id != null) rows += '<div class="modal-row"><span class="modal-label">Submission ID</span><span class="modal-value">' + escHtml(String(e.id)) + '</span></div>';
+      rows += '<div class="modal-row"><span class="modal-label">Result</span><span class="modal-value">' + (e.ok ? '\u2713 Success' : '\u2717 Failed') + '</span></div>';
+      if (e.httpStatus != null) rows += '<div class="modal-row"><span class="modal-label">HTTP Status</span><span class="modal-value">HTTP ' + escHtml(String(e.httpStatus)) + '</span></div>';
+      if (e.error) rows += '<div class="modal-row"><span class="modal-label">Error</span><pre class="modal-pre">' + escHtml(e.error) + '</pre></div>';
+      if (e.responseBody) {
+        let pretty = e.responseBody;
+        try { pretty = JSON.stringify(JSON.parse(e.responseBody), null, 2); } catch {}
+        rows += '<div class="modal-row"><span class="modal-label">Response body</span><pre class="modal-pre">' + escHtml(pretty) + (e.responseBody.length >= 2048 ? '\\n\u2026 (truncated at 2 KB)' : '') + '</pre></div>';
+      }
+      document.getElementById('modal-title').textContent = e.ok ? '\u2713 Submission forwarded' : '\u2717 Forwarding failed';
+      document.getElementById('modal-body').innerHTML = rows;
+      document.getElementById('log-modal').classList.add('open');
+    }
+
+    function closeModal(event) {
+      const overlay = document.getElementById('log-modal');
+      if (event.target === overlay) overlay.classList.remove('open');
+    }
+
+    function renderLogRows(entries, startIdx) {
+      return entries.map(function(e, i) {
+        const idx = startIdx + i;
+        const d = new Date(e.ts);
+        const timeStr = d.toLocaleDateString(undefined, {month:'short',day:'numeric'}) + ' ' +
+          d.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const badge = e.ok
+          ? '<span class="log-badge ok">\u2713 OK</span>'
+          : '<span class="log-badge fail">\u2717 Failed</span>';
+        const httpCell = e.httpStatus != null ? escHtml(String(e.httpStatus)) : '\u2014';
+        const subId = escHtml(e.uuid ? e.uuid.slice(0, 8) + '\u2026' : (e.id != null ? String(e.id) : '\u2014'));
+        return '<tr>' +
+          '<td>' + escHtml(timeStr) + '</td>' +
+          '<td title="' + escHtml(e.uuid ?? '') + '">' + subId + '</td>' +
+          '<td>' + badge + '</td>' +
+          '<td style="color:#6b7280">' + httpCell + '</td>' +
+          '<td><button class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button></td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    async function loadMoreLogs() {
+      const btn = document.getElementById('log-more-btn');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch('/api/logs/' + UID + '?offset=' + logOffset + '&limit=' + LOG_PAGE);
+        if (!res.ok) return;
+        const data = await res.json();
+        const page = Array.isArray(data.entries) ? data.entries : [];
+        logHasMore = !!data.hasMore;
+        const startIdx = logEntries.length;
+        logEntries = logEntries.concat(page);
+        logOffset = logEntries.length;
+        // append rows to existing tbody
+        const tbody = document.querySelector('#logs-container tbody');
+        if (tbody) tbody.insertAdjacentHTML('beforeend', renderLogRows(page, startIdx));
+        // update or remove load-more button
+        const existing = document.getElementById('log-more-btn');
+        if (existing) existing.remove();
+        if (logHasMore) {
+          document.getElementById('logs-container').insertAdjacentHTML('beforeend',
+            '<button class="log-load-more" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>');
+        }
+      } catch {}
+    }
+
+    async function refreshLogs(reset) {
+      if (reset) { logEntries = []; logOffset = 0; logHasMore = false; }
+      const container = document.getElementById('logs-container');
+      container.innerHTML = '';
+      try {
+        const res = await fetch('/api/logs/' + UID + '?offset=0&limit=' + LOG_PAGE);
+        if (!res.ok) { container.innerHTML = '<p class="log-empty">Could not load logs.</p>'; return; }
+        const data = await res.json();
+        const page = Array.isArray(data.entries) ? data.entries : [];
+        logHasMore = !!data.hasMore;
+        logEntries = page;
+        logOffset = page.length;
+        if (logEntries.length === 0) {
+          container.innerHTML = '<p class="log-empty">No submissions logged yet.</p>';
+          return;
+        }
+        container.innerHTML =
+          '<table class="log-table"><thead><tr>' +
+          '<th>Time</th><th>Submission ID</th><th>Status</th><th>HTTP</th><th></th>' +
+          '</tr></thead><tbody>' + renderLogRows(logEntries, 0) + '</tbody></table>';
+        if (logHasMore) {
+          container.insertAdjacentHTML('beforeend',
+            '<button class="log-load-more" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>');
+        }
+      } catch {
+        container.innerHTML = '<p class="log-empty">Could not load logs.</p>';
+      }
+    }
+
+    (async () => { await loadConfig(); loadSurvey(); refreshLogs(true); })();
   </script>
 </body>
 </html>`
