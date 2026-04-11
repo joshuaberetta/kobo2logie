@@ -225,6 +225,9 @@ ui.get("/:uid", (c) => {
     .question-item .q-label { font-weight: 500; color: #374151; }
     .question-item .q-xpath { font-family: monospace; font-size: .76rem; color: #9ca3af; }
     .question-item .q-output { font-family: monospace; font-size: .76rem; color: #d1d5db; margin-left: auto; }
+    .question-sub-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; cursor: pointer; padding: .05rem 0 .25rem 1.55rem; color: #6b7280; }
+    .question-sub-item input[type="checkbox"] { width: .85rem; height: .85rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
+    .question-sub-item .q-output { font-family: monospace; font-size: .74rem; color: #d1d5db; margin-left: auto; }
 
     .save-btn { margin-top: .75rem; width: 100%; padding: .7rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background .15s; }
     .save-btn:hover { background: #1d4ed8; }
@@ -263,11 +266,11 @@ ui.get("/:uid", (c) => {
           <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
         </div>
         <div>
-          <label for="transcribe-prompt">Transcription instruction<span class="label-hint">optional — context hint sent to OpenAI to guide transcription</span></label>
+          <label for="transcribe-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Transcription instruction<span class="label-hint">optional — context hint sent to OpenAI to guide transcription</span></label>
           <textarea id="transcribe-prompt" rows="2" placeholder="e.g. The speaker may use field-specific terminology such as GPS coordinates and village names."></textarea>
         </div>
         <div>
-          <label for="transcribe-translate">Translate transcript to<span class="label-hint">optional — translate every transcript into this language</span></label>
+          <label for="transcribe-translate"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Translate transcript to<span class="label-hint">optional — translate every transcript into this language</span></label>
           <select id="transcribe-translate">
             <option value="">No translation</option>
             <option value="English">English</option>
@@ -290,7 +293,7 @@ ui.get("/:uid", (c) => {
           </select>
         </div>
         <div>
-          <label for="describe-prompt">Image description instruction<span class="label-hint">optional — prompt sent to OpenAI with each image</span></label>
+          <label for="describe-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Image description instruction<span class="label-hint">optional — prompt sent to OpenAI with each image</span></label>
           <textarea id="describe-prompt" rows="2" placeholder="e.g. Describe this image concisely and factually. Focus on visible damage, location features, and any text present."></textarea>
         </div>
         <div>
@@ -319,58 +322,13 @@ ui.get("/:uid", (c) => {
       <div id="fields-list" class="question-list-box"></div>
     </div>
 
-    <div class="transcribe-section">
-      <label class="checkbox-row" for="transcribe-enabled">
-        <input type="checkbox" id="transcribe-enabled" onchange="toggleTranscribe()" />
-        <span>Transcribe audio</span>
-      </label>
-      <div id="transcribe-sub" class="transcribe-sub" style="display:none">
-        <div>
-          <label>Audio questions</label>
-          <div id="audio-list" class="question-list"></div>
-          <div class="load-status" id="audio-load-status"></div>
-        </div>
-        <!-- Model selector hidden for now; defaults to gpt-4o-mini-transcribe
-        <div>
-          <label for="transcribe-model">Model</label>
-          <select id="transcribe-model">
-            <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
-            <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
-          </select>
-        </div>
-        -->
-      </div>
-    </div>
-
-    <div class="transcribe-section">
-      <label class="checkbox-row" for="describe-enabled">
-        <input type="checkbox" id="describe-enabled" onchange="toggleDescribe()" />
-        <span>Describe images</span>
-      </label>
-      <div id="describe-sub" class="transcribe-sub" style="display:none">
-        <div>
-          <label>Image questions</label>
-          <div id="image-list" class="question-list"></div>
-          <div class="load-status" id="image-load-status"></div>
-        </div>
-        <!-- Model selector hidden for now; defaults to gpt-4o-mini
-        <div>
-          <label for="describe-model">Model</label>
-          <select id="describe-model">
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <option value="gpt-4o">gpt-4o</option>
-          </select>
-        </div>
-        -->
-      </div>
-    </div>
-
     <button class="save-btn" id="save-btn" onclick="save()">Save</button>
     <div class="status-msg" id="status-msg"></div>
   </div>
 
   <script>
     const UID = ${raw(JSON.stringify(uid))};
+    const SPARKLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
     let allQuestions = [];      // { xpath, label, type }[]
     let configFields = [];      // persisted fields subset
     let configTranscribeQs = []; // persisted transcribe xpath list
@@ -385,78 +343,51 @@ ui.get("/:uid", (c) => {
         const checked = (!hasFilter || configFields.includes(q.xpath)) ? ' checked' : '';
         const xpathSpan = (q.label !== q.xpath)
           ? '<span class="q-xpath">' + escHtml(q.xpath) + '</span>' : '';
-        return '<label class="question-item"><input type="checkbox" name="field" value="' +
+        const mainRow = '<label class="question-item"><input type="checkbox" name="field" value="' +
           escHtml(q.xpath) + '"' + checked + '/><span class="q-label">' +
           escHtml(q.label) + '</span>' + xpathSpan + '</label>';
+        let subRow = '';
+        if (q.type === 'audio') {
+          const tChecked = configTranscribeQs.includes(q.xpath) ? ' checked' : '';
+          subRow = '<label class="question-sub-item"><input type="checkbox" name="transcribe-q" value="' +
+            escHtml(q.xpath) + '"' + tChecked + '/>' + SPARKLE_SVG + '<span>Transcribe</span>' +
+            '<span class="q-output">\u2192 ' + escHtml(q.xpath) + '_transcript</span></label>';
+        } else if (q.type === 'image' || q.type === 'photo') {
+          const dChecked = configDescribeQs.includes(q.xpath) ? ' checked' : '';
+          subRow = '<label class="question-sub-item"><input type="checkbox" name="describe-q" value="' +
+            escHtml(q.xpath) + '"' + dChecked + '/>' + SPARKLE_SVG + '<span>Describe</span>' +
+            '<span class="q-output">\u2192 ' + escHtml(q.xpath) + '_description</span></label>';
+        }
+        return subRow ? '<div>' + mainRow + subRow + '</div>' : mainRow;
       }).join('');
       updateFieldsCount();
     }
 
-    function renderAudioList() {
-      const list = document.getElementById('audio-list');
-      const status = document.getElementById('audio-load-status');
-      const audioQs = allQuestions.filter(q => q.type === 'audio');
-      if (audioQs.length === 0) {
-        list.innerHTML = '';
-        status.textContent = allQuestions.length > 0 ? 'No audio questions in this form.' : '';
-        return;
-      }
-      status.textContent = '';
-      const hasFilter = configTranscribeQs.length > 0;
-      list.innerHTML = audioQs.map(q => {
-        const checked = (!hasFilter || configTranscribeQs.includes(q.xpath)) ? ' checked' : '';
-        return '<label class="question-item"><input type="checkbox" name="audio-q" value="' +
-          escHtml(q.xpath) + '"' + checked + '/><span class="q-label">' + escHtml(q.label) +
-          '</span><span class="q-xpath">' + escHtml(q.xpath) +
-          '</span><span class="q-output">\u2192 ' + escHtml(q.xpath) + '_transcript</span></label>';
-      }).join('');
-    }
-
-    function renderImageList() {
-      const list = document.getElementById('image-list');
-      const status = document.getElementById('image-load-status');
-      const imageQs = allQuestions.filter(q => q.type === 'image' || q.type === 'photo');
-      if (imageQs.length === 0) {
-        list.innerHTML = '';
-        status.textContent = allQuestions.length > 0 ? 'No image questions in this form.' : '';
-        return;
-      }
-      status.textContent = '';
-      const hasFilter = configDescribeQs.length > 0;
-      list.innerHTML = imageQs.map(q => {
-        const checked = (!hasFilter || configDescribeQs.includes(q.xpath)) ? ' checked' : '';
-        return '<label class="question-item"><input type="checkbox" name="image-q" value="' +
-          escHtml(q.xpath) + '"' + checked + '/><span class="q-label">' + escHtml(q.label) +
-          '</span><span class="q-xpath">' + escHtml(q.xpath) +
-          '</span><span class="q-output">\u2192 ' + escHtml(q.xpath) + '_description</span></label>';
-      }).join('');
-    }
-
     function getSelectedFields() {
-      return Array.from(document.querySelectorAll('#fields-list input[type="checkbox"]:checked')).map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list input[name="field"]:checked')).map(cb => cb.value);
     }
 
     function getSelectedAudioQs() {
-      return Array.from(document.querySelectorAll('#audio-list input[type="checkbox"]:checked')).map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list input[name="transcribe-q"]:checked')).map(cb => cb.value);
     }
 
     function getSelectedImageQs() {
-      return Array.from(document.querySelectorAll('#image-list input[type="checkbox"]:checked')).map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list input[name="describe-q"]:checked')).map(cb => cb.value);
     }
 
     function selectAllFields() {
-      document.querySelectorAll('#fields-list input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+      document.querySelectorAll('#fields-list input[name="field"]').forEach(cb => { cb.checked = true; });
       updateFieldsCount();
     }
 
     function deselectAllFields() {
-      document.querySelectorAll('#fields-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+      document.querySelectorAll('#fields-list input[name="field"]').forEach(cb => { cb.checked = false; });
       updateFieldsCount();
     }
 
     function updateFieldsCount() {
-      const total = document.querySelectorAll('#fields-list input[type="checkbox"]').length;
-      const checked = document.querySelectorAll('#fields-list input[type="checkbox"]:checked').length;
+      const total = document.querySelectorAll('#fields-list input[name="field"]').length;
+      const checked = document.querySelectorAll('#fields-list input[name="field"]:checked').length;
       const badge = document.getElementById('fields-count');
       badge.textContent = total > 0 ? checked + ' / ' + total : '';
     }
@@ -489,22 +420,10 @@ ui.get("/:uid", (c) => {
         statusEl.className = 'survey-status';
         statusEl.textContent = '';
         renderFieldsList();
-        renderAudioList();
-        renderImageList();
       } catch {
         statusEl.className = 'survey-status error';
         statusEl.textContent = 'Could not load form questions.';
       }
-    }
-
-    function toggleTranscribe() {
-      const enabled = document.getElementById('transcribe-enabled').checked;
-      document.getElementById('transcribe-sub').style.display = enabled ? 'flex' : 'none';
-    }
-
-    function toggleDescribe() {
-      const enabled = document.getElementById('describe-enabled').checked;
-      document.getElementById('describe-sub').style.display = enabled ? 'flex' : 'none';
     }
 
     // ── Load current config ───────────────────────────────────────────────────
@@ -536,15 +455,11 @@ ui.get("/:uid", (c) => {
           document.getElementById('advanced').open = true;
         }
         configFields = Array.isArray(data.fields) ? data.fields : [];
-        if (data.transcribe && Array.isArray(data.transcribe.questions) && data.transcribe.questions.length > 0) {
+        if (data.transcribe && Array.isArray(data.transcribe.questions)) {
           configTranscribeQs = data.transcribe.questions;
-          document.getElementById('transcribe-enabled').checked = true;
-          document.getElementById('transcribe-sub').style.display = 'flex';
         }
-        if (data.describe && Array.isArray(data.describe.questions) && data.describe.questions.length > 0) {
+        if (data.describe && Array.isArray(data.describe.questions)) {
           configDescribeQs = data.describe.questions;
-          document.getElementById('describe-enabled').checked = true;
-          document.getElementById('describe-sub').style.display = 'flex';
         }
       } catch {}
     }
@@ -559,21 +474,19 @@ ui.get("/:uid", (c) => {
       const selected = getSelectedFields();
       // Empty array = forward all; treat "every question checked" as "all"
       const fields = (allQuestions.length > 0 && selected.length === allQuestions.length) ? [] : selected;
-      const transcribeEnabled = document.getElementById('transcribe-enabled').checked;
       const selectedAudio = getSelectedAudioQs();
       const transcribePrompt = document.getElementById('transcribe-prompt').value.trim();
       const transcribeTranslate = document.getElementById('transcribe-translate').value.trim();
-      const transcribe = (transcribeEnabled && selectedAudio.length > 0)
+      const transcribe = selectedAudio.length > 0
         ? {
             questions: selectedAudio,
             ...(transcribePrompt ? { prompt: transcribePrompt } : {}),
             ...(transcribeTranslate ? { translateTo: transcribeTranslate } : {}),
           }
         : null;
-      const describeEnabled = document.getElementById('describe-enabled').checked;
       const selectedImages = getSelectedImageQs();
       const describePrompt = document.getElementById('describe-prompt').value.trim();
-      const describe = (describeEnabled && selectedImages.length > 0)
+      const describe = selectedImages.length > 0
         ? { questions: selectedImages, ...(describePrompt ? { prompt: describePrompt } : {}) }
         : null;
       const btn = document.getElementById('save-btn');
