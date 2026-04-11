@@ -204,6 +204,8 @@ configure.get("/project/:uid", async (c) => {
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
         editOriginal?: boolean;
+        geocode?: boolean;
+        geocodeField?: string;
         emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null };
       })
     : {};
@@ -219,6 +221,8 @@ configure.get("/project/:uid", async (c) => {
     forwardMedia: config.forwardMedia ?? null,
     appendValues: config.appendValues ?? [],
     editOriginal: config.editOriginal ?? false,
+    geocode: config.geocode ?? false,
+    geocodeField: config.geocodeField ?? "",
     emailNotification: config.emailNotification ?? null,
   });
 });
@@ -227,7 +231,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, emailNotification } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
@@ -238,6 +242,8 @@ configure.post("/project/:uid", async (c) => {
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
     editOriginal?: boolean;
+    geocode?: boolean;
+    geocodeField?: string;
     emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null } | null;
   }>();
 
@@ -432,7 +438,7 @@ configure.post("/project/:uid", async (c) => {
     };
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && safeEmailNotification === undefined) {
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && !geocode && safeEmailNotification === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -444,6 +450,8 @@ configure.post("/project/:uid", async (c) => {
       forwardToken: safeToken,
       fields: safeFields,
       editOriginal: editOriginal === true,
+      geocode: geocode === true,
+      ...(geocodeField?.trim() ? { geocodeField: geocodeField.trim() } : {}),
     };
     // transcribe: null means "clear", undefined means "don't touch"
     if (transcribe === null) {
@@ -488,6 +496,14 @@ configure.post("/project/:uid", async (c) => {
       delete next.emailNotification;
     } else if (safeEmailNotification !== undefined) {
       next.emailNotification = safeEmailNotification;
+    }
+    // geocode: always written (boolean, defaults to false)
+    next.geocode = geocode === true;
+    // geocodeField: empty string = clear (use _geolocation default)
+    if (geocodeField?.trim()) {
+      next.geocodeField = geocodeField.trim();
+    } else {
+      delete next.geocodeField;
     }
     await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }

@@ -3,6 +3,7 @@ import type { Env, LogEntry } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
 import { resolveSubmissionId, editSubmission, resolveKoboEditToken } from "../lib/koboEdit.js";
+import { geocodeSubmission } from "../lib/geocode.js";
 
 const hook = new Hono<{ Bindings: Env }>();
 
@@ -117,7 +118,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, server, emailNotification } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
@@ -128,10 +129,12 @@ hook.post("/:formUID", async (c) => {
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
       editOriginal?: boolean;
+      geocode?: boolean;
+      geocodeField?: string;
       server?: string;
       emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } };
     };
-    if (forwardUrl || editOriginal || transcribe || extract || analyzeAudio || extractText || emailNotification) {
+    if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification) {
       const submission = body as KoboSubmission;
 
       // Build a filtered payload if the user has specified a fields subset (forwarding only)
@@ -172,6 +175,38 @@ hook.post("/:formUID", async (c) => {
 
       c.executionCtx.waitUntil(
         (async () => {
+          // ── Geocode coordinates → P-codes (runs first so result is included in forward payload) ──
+          let geoFields: Record<string, string> = {};
+          if (geocode) {
+            let geoLat = NaN, geoLon = NaN;
+            if (geocodeField) {
+              const raw = (submission as Record<string, unknown>)[geocodeField];
+              if (typeof raw === "string" && raw.trim()) {
+                const parts = raw.trim().split(/\s+/);
+                geoLat = parseFloat(parts[0]);
+                geoLon = parseFloat(parts[1]);
+              }
+            } else if (Array.isArray(submission._geolocation) && submission._geolocation.length >= 2) {
+              const rawLat = (submission._geolocation as unknown[])[0];
+              const rawLon = (submission._geolocation as unknown[])[1];
+              geoLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? parseFloat(rawLat) : NaN;
+              geoLon = typeof rawLon === "number" ? rawLon : typeof rawLon === "string" ? parseFloat(rawLon) : NaN;
+            }
+            if (!isNaN(geoLat) && !isNaN(geoLon)) {
+              const raw = await geocodeSubmission(geoLat, geoLon);
+              // Prefix each field with the geopoint question xpath:
+              //   _geo_adm0_pcode → obs/Location_geo_adm0_pcode
+              const prefix = geocodeField ?? "";
+              for (const [k, v] of Object.entries(raw)) {
+                geoFields[`${prefix}${k}`] = v;
+              }
+            }
+          }
+          // Merge geo fields into the forwarded payload
+          const enrichedPayload = Object.keys(geoFields).length > 0
+            ? { ...(jsonPayload ?? (submission as Record<string, unknown>)), ...geoFields }
+            : jsonPayload;
+
           // ── Step 1: Forward submission (and/or enrich) ───────────────────
           let fwdResult: Awaited<ReturnType<typeof forwardSubmission>> | undefined;
           if (forwardUrl || transcribe || extract || analyzeAudio || extractText) {
@@ -183,7 +218,7 @@ hook.post("/:formUID", async (c) => {
                 global: c.env.KOBO_API_TOKEN_GLOBAL,
                 eu: c.env.KOBO_API_TOKEN_EU,
               },
-              jsonPayload,
+              enrichedPayload,
               forwardToken || undefined,
               transcribe || undefined,
               openaiApiKey,
@@ -276,6 +311,19 @@ hook.post("/:formUID", async (c) => {
               { ...emailNotification, subject },
               htmlBody
             );
+          }
+
+          // ── Step 4: Write geocoded P-codes back to the original Kobo submission ──
+          if (Object.keys(geoFields).length > 0 && submission._uuid) {
+            const geoServer = server ?? c.env.DEFAULT_KOBO_BASE_URL;
+            const koboToken = resolveKoboEditToken(geoServer, {
+              global: c.env.KOBO_API_TOKEN_GLOBAL,
+              eu: c.env.KOBO_API_TOKEN_EU,
+            });
+            const submissionId = await resolveSubmissionId(geoServer, formUID, submission._uuid, koboToken);
+            if (submissionId !== null) {
+              await editSubmission(geoServer, formUID, submissionId, geoFields, koboToken);
+            }
           }
         })()
       );

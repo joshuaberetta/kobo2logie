@@ -232,6 +232,7 @@ ui.get("/:uid", (c) => {
     .q-badge--audio { background: #fef3c7; color: #92400e; }
     .q-badge--image { background: #dbeafe; color: #1e40af; }
     .q-badge--text { background: #f1f5f9; color: #475569; }
+    .q-badge--geo { background: #d1fae5; color: #065f46; }
     .q-pills { display: flex; gap: .25rem; flex-shrink: 0; align-items: center; }
     .q-pill { font-size: .73rem; padding: .15rem .55rem; border-radius: 999px; border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280; cursor: pointer; white-space: nowrap; transition: background .1s, border-color .1s, color .1s; }
     .q-pill:hover { border-color: #9ca3af; color: #374151; }
@@ -399,6 +400,7 @@ ui.get("/:uid", (c) => {
             <label class="checkbox-row"><input type="checkbox" id="edit-original" /><span>Edit original submission</span></label>
             <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Write computed values (transcripts, descriptions, appended fields) back to the original KoboToolbox submission. Requires API token configured during setup.</p>
           </div>
+
           <div>
             <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
               <label class="checkbox-row"><input type="checkbox" id="email-notification-enabled" autocomplete="off" /><span>Email notifications</span></label>
@@ -526,6 +528,7 @@ ui.get("/:uid", (c) => {
     const UID = ${raw(JSON.stringify(uid))};
     const SPARKLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
     let allQuestions = [];      // { xpath, label, type }[]
+    let geocodeXpath = null;    // xpath of the geopoint question selected for geocoding
     let configFields = [];      // persisted fields subset
     let configTranscribeQs = []; // persisted transcribe xpath list
     let configExtractQs = [];    // persisted extract xpath list
@@ -602,6 +605,12 @@ ui.get("/:uid", (c) => {
           pills = '<div class="q-pills">' +
             '<button type="button" class="q-pill" aria-pressed="' + tPressed + '" data-feature="analyze" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
             '<button type="button" class="q-prompt-btn' + (tHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '" title="' + (tHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
+            '</div>';
+        } else if (q.type === 'geopoint') {
+          badge = '<span class="q-badge q-badge--geo">GEO</span>';
+          const gPressed = geocodeXpath === q.xpath ? 'true' : 'false';
+          pills = '<div class="q-pills">' +
+            '<button type="button" class="q-pill" aria-pressed="' + gPressed + '" data-feature="geocode" data-xpath="' + escHtml(q.xpath) + '">&#x1F4CD; Geocode</button>' +
             '</div>';
         }
         return '<div class="q-row" data-xpath="' + escHtml(q.xpath) + '">' +
@@ -837,6 +846,12 @@ ui.get("/:uid", (c) => {
             if (transcribeBtn) transcribeBtn.setAttribute('aria-pressed', 'true');
           }
           markDirty();
+        } else if (feature === 'geocode') {
+          const xpath = target.dataset.xpath;
+          // Radio-button style: selecting another geopoint clears the previous one
+          geocodeXpath = (geocodeXpath === xpath) ? null : xpath;
+          renderFieldsList();
+          markDirty();
         }
       }
       // Prompt button
@@ -944,6 +959,7 @@ ui.get("/:uid", (c) => {
           Object.assign(questionPrompts.extractText, data.extractText.prompts);
         }
         document.getElementById('edit-original').checked = !!data.editOriginal;
+        geocodeXpath = data.geocodeField || null;
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
         if (data.emailNotification) {
           emailNotificationConfig = data.emailNotification;
@@ -962,6 +978,8 @@ ui.get("/:uid", (c) => {
       // null = forward all; array = restrict to checked types
       const forwardMedia = checkedMedia.length > 0 ? checkedMedia : null;
       const editOriginal = document.getElementById('edit-original').checked;
+      const geocodeField = geocodeXpath || '';
+      const geocode = !!geocodeField;
       const selected = getSelectedFields();
       // _uuid is always included; treat "every non-locked question checked" as "forward all" (empty array)
       const allChecked = allQuestions.length > 0 && selected.length === allQuestions.length;
@@ -998,7 +1016,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, emailNotification: emailNotificationConfig }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification: emailNotificationConfig }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
