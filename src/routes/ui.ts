@@ -61,7 +61,7 @@ ui.get("/", (c) => {
       </div>
     </div>
 
-    <button class="action-btn" id="setup-btn" onclick="setupIntegration()">Set up integration</button>
+    <button type="button" class="action-btn" id="setup-btn" onclick="setupIntegration()">Set up integration</button>
 
     <div class="results" id="results">
       <div class="result-row">
@@ -74,7 +74,7 @@ ui.get("/", (c) => {
       </div>
     </div>
 
-    <button class="continue-btn" id="continue-btn" onclick="goToProject()">Configure project &rarr;</button>
+    <button type="button" class="continue-btn" id="continue-btn" onclick="goToProject()">Configure project &rarr;</button>
   </div>
 
   <script>
@@ -297,7 +297,7 @@ ui.get("/:uid", (c) => {
       </div>
       <div class="save-row">
         <div class="status-msg" id="status-msg"></div>
-        <button class="save-btn" id="save-btn" onclick="save()">Save</button>
+        <button type="button" class="save-btn" id="save-btn" onclick="save()">Save</button>
       </div>
     </div>
 
@@ -370,9 +370,9 @@ ui.get("/:uid", (c) => {
     </div>
 
     <div class="log-header">
-      <button class="log-title-btn" id="log-toggle" onclick="toggleLog()"><svg class="log-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Submission log</button>
+      <button type="button" class="log-title-btn" id="log-toggle" onclick="toggleLog()"><svg class="log-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Submission log</button>
       <div class="log-actions">
-        <button class="log-refresh-btn" onclick="refreshLogs(true)">Refresh</button>
+        <button type="button" class="log-refresh-btn" onclick="refreshLogs(true)">Refresh</button>
       </div>
     </div>
     <div class="log-body" id="log-body">
@@ -386,7 +386,7 @@ ui.get("/:uid", (c) => {
     <div class="modal">
       <div class="modal-header">
         <span class="modal-title" id="modal-title">Submission detail</span>
-        <button class="modal-close" onclick="document.getElementById('log-modal').classList.remove('open')">&times;</button>
+        <button type="button" class="modal-close" onclick="document.getElementById('log-modal').classList.remove('open')">&times;</button>
       </div>
       <div class="modal-body" id="modal-body"></div>
     </div>
@@ -642,7 +642,7 @@ ui.get("/:uid", (c) => {
           '<td title="' + escHtml(e.uuid ?? '') + '">' + subId + '</td>' +
           '<td>' + badge + '</td>' +
           '<td style="color:#6b7280">' + httpCell + '</td>' +
-          '<td><button class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button></td>' +
+          '<td><button type="button" class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button></td>' +
           '</tr>';
       }).join('');
     }
@@ -667,7 +667,7 @@ ui.get("/:uid", (c) => {
         if (existing) existing.remove();
         if (logHasMore) {
           document.getElementById('logs-container').insertAdjacentHTML('beforeend',
-            '<button class="log-load-more" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>');
+            '<button type="button" class="log-load-more" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>');
         }
       } catch {}
     }
@@ -694,7 +694,7 @@ ui.get("/:uid", (c) => {
           '</tr></thead><tbody>' + renderLogRows(logEntries, 0) + '</tbody></table>';
         if (logHasMore) {
           container.insertAdjacentHTML('beforeend',
-            '<button class="log-load-more" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>');
+            '<button type="button" class="log-load-more" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>');
         }
       } catch {
         container.innerHTML = '<p class="log-empty">Could not load logs.</p>';
