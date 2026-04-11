@@ -8,6 +8,73 @@ const hook = new Hono<{ Bindings: Env }>();
 
 const MAX_BODY_BYTES = 1_048_576; // 1 MB
 
+async function generateEmailBody(
+  apiKey: string,
+  instructions: string,
+  submission: Record<string, unknown>
+): Promise<string> {
+  const systemPrompt = [
+    "You are an assistant that generates HTML email bodies for form submission notifications.",
+    "Format the output as a complete HTML fragment (no <html>/<head>/<body> tags — just the inner content).",
+    "Use inline styles. Keep it clean and professional.",
+    instructions,
+  ].join("\n");
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Submission data:\n${JSON.stringify(submission, null, 2)}` },
+        ],
+        max_tokens: 1024,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[email/ai] OpenAI error ${res.status}`);
+      return `<p>A new submission was received.</p><pre>${JSON.stringify(submission, null, 2)}</pre>`;
+    }
+    const data = await res.json<{ choices: Array<{ message: { content: string } }> }>();
+    return data.choices?.[0]?.message?.content?.trim() ?? "<p>A new submission was received.</p>";
+  } catch (e) {
+    console.error(`[email/ai] Error generating body: ${e}`);
+    return "<p>A new submission was received.</p>";
+  }
+}
+
+async function sendResendEmail(
+  apiKey: string,
+  from: string,
+  cfg: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } },
+  htmlBody: string
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    from,
+    to: cfg.to,
+    subject: cfg.subject,
+    html: htmlBody,
+  };
+  if (cfg.cc?.length) payload.cc = cfg.cc;
+  if (cfg.bcc?.length) payload.bcc = cfg.bcc;
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`[email] Resend error ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
 hook.post("/:formUID", async (c) => {
   const formUID = c.req.param("formUID");
 
@@ -50,7 +117,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, server } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, server, emailNotification } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
@@ -62,8 +129,9 @@ hook.post("/:formUID", async (c) => {
       appendValues?: Array<{ key: string; value: string }>;
       editOriginal?: boolean;
       server?: string;
+      emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } };
     };
-    if (forwardUrl || editOriginal || transcribe || extract || analyzeAudio || extractText) {
+    if (forwardUrl || editOriginal || transcribe || extract || analyzeAudio || extractText || emailNotification) {
       const submission = body as KoboSubmission;
 
       // Build a filtered payload if the user has specified a fields subset (forwarding only)
@@ -177,6 +245,38 @@ hook.post("/:formUID", async (c) => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(logEntry),
           });
+
+          // ── Step 3: Send email notification ──────────────────────────────
+          if (emailNotification && c.env.RESEND_API_KEY && c.env.RESEND_FROM_EMAIL) {
+            // Merge enrichment (transcripts, AI descriptions) into the payload sent to the LLM
+            const emailPayload: Record<string, unknown> = {
+              ...(jsonPayload ?? (submission as Record<string, unknown>)),
+              ...(fwdResult?.enrichment ?? {}),
+            };
+            const fill = (s: string) =>
+              s.replace(/\{\{([\w.]+)\}\}/g, (_, k) => String((emailPayload as Record<string, unknown>)[k] ?? ""));
+            const subject = fill(emailNotification.subject);
+            let htmlBody: string;
+            if (emailNotification.aiBody && c.env.OPENAI_API_KEY) {
+              htmlBody = await generateEmailBody(
+                c.env.OPENAI_API_KEY,
+                emailNotification.aiBody.instructions,
+                emailPayload as Record<string, unknown>
+              );
+            } else {
+              const text = fill(emailNotification.body ?? "");
+              htmlBody = '<div style="font-family:sans-serif;font-size:14px;color:#1a1a1a">'
+                + text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                       .replace(/\n/g, "<br>")
+                + "</div>";
+            }
+            await sendResendEmail(
+              c.env.RESEND_API_KEY,
+              c.env.RESEND_FROM_EMAIL,
+              { ...emailNotification, subject },
+              htmlBody
+            );
+          }
         })()
       );
     }

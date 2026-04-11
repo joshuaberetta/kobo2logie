@@ -204,6 +204,7 @@ configure.get("/project/:uid", async (c) => {
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
         editOriginal?: boolean;
+        emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null };
       })
     : {};
   return c.json({
@@ -218,6 +219,7 @@ configure.get("/project/:uid", async (c) => {
     forwardMedia: config.forwardMedia ?? null,
     appendValues: config.appendValues ?? [],
     editOriginal: config.editOriginal ?? false,
+    emailNotification: config.emailNotification ?? null,
   });
 });
 
@@ -225,7 +227,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, emailNotification } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
@@ -236,6 +238,7 @@ configure.post("/project/:uid", async (c) => {
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
     editOriginal?: boolean;
+    emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null } | null;
   }>();
 
   if (forwardUrl) {
@@ -399,7 +402,37 @@ configure.post("/project/:uid", async (c) => {
       .filter((e) => e.key.length > 0);
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal) {
+  let safeEmailNotification: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } } | undefined;
+  if (emailNotification != null) {
+    const { to, cc, bcc, subject, body, aiBody } = emailNotification;
+    if (!Array.isArray(to) || to.length === 0) {
+      return c.json({ error: "emailNotification.to must be a non-empty array" }, 400);
+    }
+    const safeTo = (to as unknown[]).map((e) => String(e).trim()).filter(Boolean);
+    if (safeTo.length === 0) {
+      return c.json({ error: "emailNotification.to must contain at least one email" }, 400);
+    }
+    const safeSubject = String(subject ?? "").trim();
+    if (!safeSubject) {
+      return c.json({ error: "emailNotification.subject is required" }, 400);
+    }
+    const safeCc = Array.isArray(cc) ? (cc as unknown[]).map((e) => String(e).trim()).filter(Boolean) : undefined;
+    const safeBcc = Array.isArray(bcc) ? (bcc as unknown[]).map((e) => String(e).trim()).filter(Boolean) : undefined;
+    let safeAiBody: { instructions: string } | undefined;
+    if (aiBody != null && typeof aiBody === "object") {
+      const instructions = String((aiBody as Record<string, unknown>).instructions ?? "").trim();
+      if (instructions) safeAiBody = { instructions };
+    }
+    safeEmailNotification = {
+      to: safeTo,
+      ...(safeCc?.length ? { cc: safeCc } : {}),
+      ...(safeBcc?.length ? { bcc: safeBcc } : {}),
+      subject: safeSubject,
+      ...(safeAiBody ? { aiBody: safeAiBody } : { body: String(body ?? "").trim() }),
+    };
+  }
+
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && safeEmailNotification === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -449,6 +482,12 @@ configure.post("/project/:uid", async (c) => {
       } else {
         delete next.appendValues;
       }
+    }
+    // emailNotification: null means "clear", undefined means "don't touch"
+    if (emailNotification === null) {
+      delete next.emailNotification;
+    } else if (safeEmailNotification !== undefined) {
+      next.emailNotification = safeEmailNotification;
     }
     await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }

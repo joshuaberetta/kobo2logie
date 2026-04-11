@@ -7,6 +7,9 @@ compatibility_flags = ["nodejs_compat"]
 DEFAULT_KOBO_BASE_URL = "https://kf.kobotoolbox.org"
 MAX_BUFFER_SIZE = "50"
 MAX_BODY_BYTES = "1048576"
+# RESEND_API_KEY and RESEND_FROM_EMAIL must be set as Worker secrets:
+#   wrangler secret put RESEND_API_KEY
+#   wrangler secret put RESEND_FROM_EMAIL
 
 [[kv_namespaces]]
 binding = "FORWARD_CONFIG"

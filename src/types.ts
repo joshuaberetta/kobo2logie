@@ -20,4 +20,6 @@ export interface Env {
   KOBO_API_TOKEN_GLOBAL: string;
   KOBO_API_TOKEN_EU: string;
   OPENAI_API_KEY: string;
+  RESEND_API_KEY: string;
+  RESEND_FROM_EMAIL: string;
 }

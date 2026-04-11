@@ -300,6 +300,8 @@ ui.get("/:uid", (c) => {
     .kv-editor { display: flex; flex-direction: column; gap: .4rem; }
     .kv-row { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .4rem; align-items: center; }
     .kv-row input { min-width: 0; }
+    .kv-row textarea { min-width: 0; font-size: .82rem; padding: .35rem .55rem; border-radius: 6px; resize: vertical; }
+    #prompt-modal-fields .kv-row { align-items: start; }
     .kv-remove { background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: 1rem; color: #9ca3af; cursor: pointer; padding: .25rem .45rem; line-height: 1; }
     .kv-remove:hover { border-color: #fca5a5; color: #dc2626; }
     .kv-add { background: none; border: 1.5px dashed #d1d5db; border-radius: 6px; font-size: .8rem; font-weight: 600; color: #6b7280; cursor: pointer; padding: .35rem .6rem; align-self: flex-start; margin-top: .15rem; }
@@ -380,6 +382,13 @@ ui.get("/:uid", (c) => {
           <label class="checkbox-row"><input type="checkbox" id="edit-original" /><span>Edit original submission</span></label>
           <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Write computed values (transcripts, descriptions, appended fields) back to the original KoboToolbox submission. Requires API token configured during setup.</p>
         </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <label class="checkbox-row"><input type="checkbox" id="email-notification-enabled" autocomplete="off" /><span>Email notifications</span></label>
+            <button type="button" class="select-btn" id="email-configure-btn" style="display:none" onclick="openEmailModal()">Configure&hellip;</button>
+          </div>
+          <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Send an email via Resend on every new submission. Requires <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">RESEND_API_KEY</code> to be set as a Worker secret. Use <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{_uuid}}</code>, <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{field_name}}</code> as placeholders in subject and body.</p>
+        </div>
       </div>
     </details>
 
@@ -451,6 +460,49 @@ ui.get("/:uid", (c) => {
     </div>
   </div>
 
+  <div class="modal-overlay" id="email-modal" onclick="closeEmailOverlay(event)">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <span class="modal-title">Email notification settings</span>
+        <button type="button" class="modal-close" onclick="closeEmailModal(false)">&times;</button>
+      </div>
+      <div class="modal-body" style="gap:.9rem">
+        <div>
+          <label for="email-to" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">To <span style="color:#dc2626">*</span><span class="label-hint">comma-separated</span></label>
+          <input id="email-to" type="text" placeholder="recipient@example.com, another@example.com" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label for="email-cc" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">CC<span class="label-hint">comma-separated, optional</span></label>
+          <input id="email-cc" type="text" placeholder="cc@example.com" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label for="email-bcc" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">BCC<span class="label-hint">comma-separated, optional</span></label>
+          <input id="email-bcc" type="text" placeholder="bcc@example.com" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label for="email-subject" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Subject <span style="color:#dc2626">*</span><span class="label-hint">use {{field_name}} for submission values</span></label>
+          <input id="email-subject" type="text" placeholder="New Kobo submission: {{_uuid}}" autocomplete="off" spellcheck="false" />
+        </div>
+        <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:.65rem .75rem">
+          <label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" id="email-ai-enabled" autocomplete="off" /><span style="font-size:.85rem;font-weight:600;color:#444">Generate body with AI</span></label>
+          <p style="font-size:.78rem;color:#6b7280;margin:.3rem 0 0 1.55rem">Uses OpenAI to compose an HTML email from the submission data based on your instructions.</p>
+        </div>
+        <div id="email-ai-section">
+          <label for="email-ai-instructions" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">AI instructions</label>
+          <textarea id="email-ai-instructions" rows="5" placeholder="Describe how the email should be structured&hellip;"></textarea>
+        </div>
+        <div id="email-body-section">
+          <label for="email-body" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Body<span class="label-hint">use {{field_name}} for submission values</span></label>
+          <textarea id="email-body" rows="5" placeholder="A new submission was received."></textarea>
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
+          <button type="button" class="select-btn" onclick="closeEmailModal(false)">Cancel</button>
+          <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveEmailModal()">Save email settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const UID = ${raw(JSON.stringify(uid))};
     const SPARKLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
@@ -463,6 +515,9 @@ ui.get("/:uid", (c) => {
 
     // Per-question analysis prompts (type → xpath → {description?: string, fields: [{key, instruction}]})
     const questionPrompts = { extract: {}, analyzeAudio: {}, extractText: {} };
+
+    // Email notification config (null = disabled)
+    let emailNotificationConfig = null;
 
     // Current state for the prompt modal
     let _promptXpath = null;
@@ -563,7 +618,7 @@ ui.get("/:uid", (c) => {
     function promptFieldRowHtml(key, instruction) {
       return '<div class="kv-row">' +
         '<input type="text" class="pf-key" placeholder="e.g. group1/person_name" value="' + escHtml(key ?? '') + '" autocomplete="off" spellcheck="false" />' +
-        '<input type="text" class="pf-desc" placeholder="what to extract" value="' + escHtml(instruction ?? '') + '" autocomplete="off" spellcheck="false" />' +
+        '<textarea class="pf-desc" rows="2" placeholder="what to extract" autocomplete="off" spellcheck="false">' + escHtml(instruction ?? '') + '</textarea>' +
         '<button type="button" class="kv-remove" onclick="this.parentElement.remove()" title="Remove">&times;</button>' +
         '</div>';
     }
@@ -630,6 +685,83 @@ ui.get("/:uid", (c) => {
     function closeQPromptModal(e) {
       if (e && e.target !== document.getElementById('prompt-modal')) return;
       closePromptModal();
+    }
+
+    // ── Email notification modal ──────────────────────────────────────────────
+    document.getElementById('email-notification-enabled').addEventListener('change', function() {
+      if (this.checked) {
+        openEmailModal();
+      } else {
+        emailNotificationConfig = null;
+        document.getElementById('email-configure-btn').style.display = 'none';
+        markDirty();
+      }
+    });
+
+    function closeEmailOverlay(e) {
+      if (e && e.target !== document.getElementById('email-modal')) return;
+      closeEmailModal(false);
+    }
+
+    const EMAIL_AI_DEFAULT_INSTRUCTIONS = 'Write a clean, professional HTML notification email summarising the form submission.\\n\\nGuidelines:\\n- Start with a brief heading (e.g. "New submission received")\\n- Show key fields in a simple two-column table (label | value)\\n- Skip internal metadata fields that start with _ (except _uuid and _submission_time)\\n- End with a short note that this was sent automatically by the kobo2logie integration';
+
+    document.getElementById('email-ai-enabled').addEventListener('change', function() {
+      var useAi = this.checked;
+      document.getElementById('email-ai-section').style.display = useAi ? '' : 'none';
+      document.getElementById('email-body-section').style.display = useAi ? 'none' : '';
+    });
+
+    function openEmailModal() {
+      var cfg = emailNotificationConfig || {};
+      document.getElementById('email-to').value = (cfg.to || []).join(', ');
+      document.getElementById('email-cc').value = (cfg.cc || []).join(', ');
+      document.getElementById('email-bcc').value = (cfg.bcc || []).join(', ');
+      document.getElementById('email-subject').value = cfg.subject || 'New Kobo submission: {{_uuid}}';
+      var hasAi = !!(cfg.aiBody);
+      var aiCb = document.getElementById('email-ai-enabled');
+      aiCb.checked = hasAi;
+      document.getElementById('email-ai-section').style.display = hasAi ? '' : 'none';
+      document.getElementById('email-body-section').style.display = hasAi ? 'none' : '';
+      document.getElementById('email-ai-instructions').value = (cfg.aiBody && cfg.aiBody.instructions) || EMAIL_AI_DEFAULT_INSTRUCTIONS;
+      document.getElementById('email-body').value = cfg.body || 'A new submission was received.\\n\\nUUID: {{_uuid}}\\nTime: {{_submission_time}}';
+      document.getElementById('email-modal').classList.add('open');
+    }
+
+    function closeEmailModal(saved) {
+      document.getElementById('email-modal').classList.remove('open');
+      if (!saved && !emailNotificationConfig) {
+        document.getElementById('email-notification-enabled').checked = false;
+      }
+    }
+
+    function saveEmailModal() {
+      var toRaw = document.getElementById('email-to').value.trim();
+      var ccRaw = document.getElementById('email-cc').value.trim();
+      var bccRaw = document.getElementById('email-bcc').value.trim();
+      var subject = document.getElementById('email-subject').value.trim();
+      var useAi = document.getElementById('email-ai-enabled').checked;
+      var aiInstructions = document.getElementById('email-ai-instructions').value.trim();
+      var body = document.getElementById('email-body').value.trim();
+      if (!toRaw || !subject) {
+        alert('To and Subject are required.');
+        return;
+      }
+      var parseEmails = function(s) { return s.split(',').map(function(e) { return e.trim(); }).filter(Boolean); };
+      emailNotificationConfig = { to: parseEmails(toRaw) };
+      var cc = parseEmails(ccRaw);
+      var bcc = parseEmails(bccRaw);
+      if (cc.length) emailNotificationConfig.cc = cc;
+      if (bcc.length) emailNotificationConfig.bcc = bcc;
+      emailNotificationConfig.subject = subject;
+      if (useAi) {
+        emailNotificationConfig.aiBody = { instructions: aiInstructions };
+      } else {
+        emailNotificationConfig.body = body;
+      }
+      document.getElementById('email-modal').classList.remove('open');
+      document.getElementById('email-notification-enabled').checked = true;
+      document.getElementById('email-configure-btn').style.display = '';
+      markDirty();
     }
 
     function selectAllFields() {
@@ -794,6 +926,11 @@ ui.get("/:uid", (c) => {
         }
         document.getElementById('edit-original').checked = !!data.editOriginal;
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
+        if (data.emailNotification) {
+          emailNotificationConfig = data.emailNotification;
+          document.getElementById('email-notification-enabled').checked = true;
+          document.getElementById('email-configure-btn').style.display = '';
+        }
       } catch {}
     }
 
@@ -842,7 +979,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, emailNotification: emailNotificationConfig }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
