@@ -294,7 +294,10 @@ ui.get("/:uid", (c) => {
     summary::before { content: '\\203A'; display: inline-block; transition: transform .15s; font-size: 1rem; line-height: 1; }
     details[open] summary::before { transform: rotate(90deg); }
     summary:hover { color: #374151; }
-    .advanced-body { padding: .75rem .9rem 1rem; border-top: 1.5px solid #e5e7eb; display: flex; flex-direction: column; gap: 1.25rem; }
+    .advanced-body { padding: .75rem .9rem 1rem; border-top: 1.5px solid #e5e7eb; display: flex; flex-direction: column; gap: 0; }
+    .adv-group { display: flex; flex-direction: column; gap: 1.25rem; }
+    .adv-group + .adv-group { padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1.5px solid #f3f4f6; }
+    .adv-group-title { font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: .3rem; }
     textarea { width: 100%; padding: .6rem .8rem; border: 1.5px solid #ddd; border-radius: 8px; font-size: .88rem; font-family: inherit; color: #1a1a1a; outline: none; resize: vertical; transition: border-color .15s; box-sizing: border-box; }
     textarea:focus { border-color: #2563eb; }
     .kv-editor { display: flex; flex-direction: column; gap: .4rem; }
@@ -328,67 +331,83 @@ ui.get("/:uid", (c) => {
     <details id="advanced">
       <summary>Advanced settings</summary>
       <div class="advanced-body">
-        <div>
-          <label for="forward-url">Forwarding URL<span class="label-hint">optional — relay submissions to another service</span></label>
-          <input id="forward-url" type="url" placeholder="https://your-service.example.com/webhook" autocomplete="off" spellcheck="false" />
-        </div>
-        <div>
-          <label for="forward-token">Bearer token<span class="label-hint">optional — sent as Authorization: Bearer &lt;token&gt;</span></label>
-          <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
-        </div>
-        <div>
-          <label>Append to payload<span class="label-hint">static key-value pairs added under <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_metadata</code> in the forwarded JSON — e.g. context=mozambique</span></label>
-          <div class="kv-col-headers"><span class="kv-col-header">Key</span><span class="kv-col-header">Value</span><span></span></div>
-          <div class="kv-editor" id="kv-editor"></div>
-          <button type="button" class="kv-add" onclick="addKVRow()">+ Add field</button>
-        </div>
-        <div>
-          <label for="transcribe-prompt"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Transcription instruction<span class="label-hint">optional — context hint sent to OpenAI to guide transcription</span></label>
-          <textarea id="transcribe-prompt" rows="2" placeholder="e.g. The speaker may use field-specific terminology such as GPS coordinates and village names."></textarea>
-        </div>
-        <div>
-          <label for="transcribe-translate"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:.3rem"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>Translate transcript to<span class="label-hint">optional — translate every transcript into this language</span></label>
-          <select id="transcribe-translate">
-            <option value="">No translation</option>
-            <option value="English">English</option>
-            <option value="French">French</option>
-            <option value="Spanish">Spanish</option>
-            <option value="Arabic">Arabic</option>
-            <option value="Portuguese">Portuguese</option>
-            <option value="Russian">Russian</option>
-            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
-            <option value="Turkish">Turkish</option>
-            <option value="German">German</option>
-            <option value="Italian">Italian</option>
-            <option value="Ukrainian">Ukrainian</option>
-            <option value="Swahili">Swahili</option>
-            <option value="Hausa">Hausa</option>
-            <option value="Somali">Somali</option>
-            <option value="Dari">Dari</option>
-            <option value="Pashto">Pashto</option>
-            <option value="Burmese">Burmese</option>
-          </select>
-        </div>
-        <div>
-          <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
-          <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
-            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
-            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="audio" /><span>Audio</span></label>
-            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="video" /><span>Video</span></label>
-            <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="application" /><span>Files (PDF, etc.)</span></label>
+
+        <!-- Forwarding -->
+        <div class="adv-group">
+          <div class="adv-group-title">Forwarding</div>
+          <div>
+            <label for="forward-url">Forwarding URL<span class="label-hint">optional — relay submissions to another service</span></label>
+            <input id="forward-url" type="url" placeholder="https://your-service.example.com/webhook" autocomplete="off" spellcheck="false" />
+          </div>
+          <div>
+            <label for="forward-token">Bearer token<span class="label-hint">optional — sent as Authorization: Bearer &lt;token&gt;</span></label>
+            <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+          </div>
+          <div>
+            <label>Append to payload<span class="label-hint">static key-value pairs added under <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_metadata</code> in the forwarded JSON — e.g. context=mozambique</span></label>
+            <div class="kv-col-headers"><span class="kv-col-header">Key</span><span class="kv-col-header">Value</span><span></span></div>
+            <div class="kv-editor" id="kv-editor"></div>
+            <button type="button" class="kv-add" onclick="addKVRow()">+ Add field</button>
+          </div>
+          <div>
+            <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
+              <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
+              <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="audio" /><span>Audio</span></label>
+              <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="video" /><span>Video</span></label>
+              <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="application" /><span>Files (PDF, etc.)</span></label>
+            </div>
           </div>
         </div>
-        <div>
-          <label class="checkbox-row"><input type="checkbox" id="edit-original" /><span>Edit original submission</span></label>
-          <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Write computed values (transcripts, descriptions, appended fields) back to the original KoboToolbox submission. Requires API token configured during setup.</p>
-        </div>
-        <div>
-          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-            <label class="checkbox-row"><input type="checkbox" id="email-notification-enabled" autocomplete="off" /><span>Email notifications</span></label>
-            <button type="button" class="select-btn" id="email-configure-btn" style="display:none" onclick="openEmailModal()">Configure&hellip;</button>
+
+        <!-- AI processing -->
+        <div class="adv-group">
+          <div class="adv-group-title"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>AI processing</div>
+          <div>
+            <label for="transcribe-prompt">Transcription instruction<span class="label-hint">optional — context hint sent to the AI model to guide transcription</span></label>
+            <textarea id="transcribe-prompt" rows="2" placeholder="e.g. The speaker may use field-specific terminology such as GPS coordinates and village names."></textarea>
           </div>
-          <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Send an email via Resend on every new submission. Requires <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">RESEND_API_KEY</code> to be set as a Worker secret. Use <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{_uuid}}</code>, <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{field_name}}</code> as placeholders in subject and body.</p>
+          <div>
+            <label for="transcribe-translate">Translate transcript to<span class="label-hint">optional — translate every transcript into this language</span></label>
+            <select id="transcribe-translate">
+              <option value="">No translation</option>
+              <option value="English">English</option>
+              <option value="French">French</option>
+              <option value="Spanish">Spanish</option>
+              <option value="Arabic">Arabic</option>
+              <option value="Portuguese">Portuguese</option>
+              <option value="Russian">Russian</option>
+              <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+              <option value="Turkish">Turkish</option>
+              <option value="German">German</option>
+              <option value="Italian">Italian</option>
+              <option value="Ukrainian">Ukrainian</option>
+              <option value="Swahili">Swahili</option>
+              <option value="Hausa">Hausa</option>
+              <option value="Somali">Somali</option>
+              <option value="Dari">Dari</option>
+              <option value="Pashto">Pashto</option>
+              <option value="Burmese">Burmese</option>
+            </select>
+          </div>
         </div>
+
+        <!-- Actions -->
+        <div class="adv-group">
+          <div class="adv-group-title">Actions</div>
+          <div>
+            <label class="checkbox-row"><input type="checkbox" id="edit-original" /><span>Edit original submission</span></label>
+            <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Write computed values (transcripts, descriptions, appended fields) back to the original KoboToolbox submission. Requires API token configured during setup.</p>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+              <label class="checkbox-row"><input type="checkbox" id="email-notification-enabled" autocomplete="off" /><span>Email notifications</span></label>
+              <button type="button" class="select-btn" id="email-configure-btn" style="display:none" onclick="openEmailModal()">Configure&hellip;</button>
+            </div>
+            <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Send an email via Resend on every new submission. Requires <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">RESEND_API_KEY</code> to be set as a Worker secret. Use <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{_uuid}}</code>, <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{field_name}}</code> as placeholders in subject and body.</p>
+          </div>
+        </div>
+
       </div>
     </details>
 
@@ -485,7 +504,7 @@ ui.get("/:uid", (c) => {
         </div>
         <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:.65rem .75rem">
           <label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" id="email-ai-enabled" autocomplete="off" /><span style="font-size:.85rem;font-weight:600;color:#444">Generate body with AI</span></label>
-          <p style="font-size:.78rem;color:#6b7280;margin:.3rem 0 0 1.55rem">Uses OpenAI to compose an HTML email from the submission data based on your instructions.</p>
+          <p style="font-size:.78rem;color:#6b7280;margin:.3rem 0 0 1.55rem">Uses AI to compose an HTML email from the submission data based on your instructions.</p>
         </div>
         <div id="email-ai-section">
           <label for="email-ai-instructions" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">AI instructions</label>
