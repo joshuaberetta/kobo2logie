@@ -220,16 +220,24 @@ ui.get("/:uid", (c) => {
     .transcribe-sub { display: flex; flex-direction: column; gap: 1rem; margin-top: .9rem; }
     .load-status { font-size: .78rem; margin-top: .35rem; color: #6b7280; min-height: 1.1rem; }
     .load-status.error { color: #dc2626; }
-    .question-list { display: flex; flex-direction: column; gap: .25rem; }
-    .question-list-box { max-height: 19rem; overflow-y: auto; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: .4rem .6rem; display: flex; flex-direction: column; gap: .2rem; }
-    .question-item { display: flex; align-items: baseline; gap: .5rem; font-size: .85rem; cursor: pointer; padding: .15rem 0; }
-    .question-item input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; margin-top: .1rem; }
-    .question-item .q-label { font-weight: 500; color: #374151; }
-    .question-item .q-xpath { font-family: monospace; font-size: .76rem; color: #9ca3af; }
-    .question-item .q-output { font-family: monospace; font-size: .76rem; color: #d1d5db; margin-left: auto; }
-    .question-sub-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; cursor: pointer; padding: .05rem 0 .25rem 1.55rem; color: #6b7280; }
-    .question-sub-item input[type="checkbox"] { width: .85rem; height: .85rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
-    .question-sub-item .q-output { font-family: monospace; font-size: .74rem; color: #d1d5db; margin-left: auto; }
+    .question-list-box { max-height: 19rem; overflow-y: auto; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: .3rem .5rem; display: flex; flex-direction: column; gap: 0; }
+    .q-row { display: flex; align-items: center; gap: .5rem; padding: .2rem .25rem; border-radius: 6px; font-size: .85rem; }
+    .q-row:hover { background: #f9fafb; }
+    .q-row input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; }
+    .q-include { display: flex; align-items: center; gap: .4rem; flex: 1; min-width: 0; cursor: pointer; overflow: hidden; }
+    .q-label { font-weight: 500; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-xpath { font-family: monospace; font-size: .74rem; color: #9ca3af; flex-shrink: 0; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-badge { font-size: .65rem; font-weight: 700; letter-spacing: .04em; padding: .1rem .35rem; border-radius: 4px; flex-shrink: 0; width: 3.2rem; text-align: center; }
+    .q-badge--audio { background: #fef3c7; color: #92400e; }
+    .q-badge--image { background: #dbeafe; color: #1e40af; }
+    .q-badge--text { background: #f1f5f9; color: #475569; }
+    .q-pills { display: flex; gap: .25rem; flex-shrink: 0; align-items: center; }
+    .q-pill { font-size: .73rem; padding: .15rem .55rem; border-radius: 999px; border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280; cursor: pointer; white-space: nowrap; transition: background .1s, border-color .1s, color .1s; }
+    .q-pill:hover { border-color: #9ca3af; color: #374151; }
+    .q-pill[aria-pressed="true"] { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 600; }
+    .q-prompt-btn { background: none; border: 1.5px solid #e5e7eb; border-radius: 4px; font-size: .7rem; color: #9ca3af; cursor: pointer; padding: .08rem .3rem; line-height: 1.4; flex-shrink: 0; transition: border-color .1s, color .1s; }
+    .q-prompt-btn:hover { border-color: #9ca3af; color: #374151; }
+    .q-prompt-btn.has-prompt { border-color: #93c5fd; color: #2563eb; background: #eff6ff; }
 
     .save-row { display: flex; align-items: center; gap: .75rem; padding-top: .35rem; flex-shrink: 0; }
     .save-btn { padding: .5rem 1.5rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; }
@@ -294,9 +302,7 @@ ui.get("/:uid", (c) => {
     .kv-add:hover { border-color: #9ca3af; color: #374151; }
     .kv-col-headers { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .4rem; padding-bottom: .1rem; }
     .kv-col-header { font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
-    .prompt-edit-btn { background: none; border: 1.5px solid #e5e7eb; border-radius: 4px; font-size: .7rem; color: #9ca3af; cursor: pointer; padding: .05rem .3rem; line-height: 1.5; flex-shrink: 0; margin-left: .15rem; }
-    .prompt-edit-btn:hover { border-color: #9ca3af; color: #374151; }
-    .prompt-edit-btn.has-prompt { border-color: #93c5fd; color: #2563eb; background: #eff6ff; }
+
   </style>
 </head>
 <body>
@@ -470,44 +476,50 @@ ui.get("/:uid", (c) => {
       if (allQuestions.length === 0) return;
       const hasFilter = configFields.length > 0;
       // _uuid is always first and always locked
-      const uuidRow = '<label class="question-item"><input type="checkbox" name="field-locked" value="_uuid" checked disabled style="accent-color:#93c5fd;cursor:not-allowed" /><span class="q-label" style="color:#9ca3af">_uuid</span><span style="font-size:.72rem;color:#d1d5db;margin-left:.4rem">(always included)</span></label>';
+      const uuidRow = '<div class="q-row">' +
+        '<input type="checkbox" name="field-locked" value="_uuid" checked disabled style="accent-color:#93c5fd;cursor:not-allowed" />' +
+        '<span class="q-label" style="color:#9ca3af;flex:1;min-width:0">_uuid</span>' +
+        '<span style="font-size:.72rem;color:#d1d5db;flex-shrink:0">(always included)</span>' +
+        '</div>';
       list.innerHTML = uuidRow + allQuestions.map(q => {
         const checked = (!hasFilter || configFields.includes(q.xpath)) ? ' checked' : '';
         const xpathSpan = (q.label !== q.xpath)
           ? '<span class="q-xpath">' + escHtml(q.xpath) + '</span>' : '';
-        const mainRow = '<label class="question-item"><input type="checkbox" name="field" value="' +
-          escHtml(q.xpath) + '"' + checked + '/><span class="q-label">' +
-          escHtml(q.label) + '</span>' + xpathSpan + '</label>';
-        let subRow = '';
+        let badge = '';
+        let pills = '';
         if (q.type === 'audio') {
-          const analyzeChecked = configAnalyzeAudioQs.includes(q.xpath);
-          const tChecked = (configTranscribeQs.includes(q.xpath) || analyzeChecked) ? ' checked' : '';
-          const tDisabled = analyzeChecked ? ' disabled' : '';
-          const aChecked = analyzeChecked ? ' checked' : '';
+          badge = '<span class="q-badge q-badge--audio">AUDIO</span>';
+          const analyzeOn = configAnalyzeAudioQs.includes(q.xpath);
+          const tPressed = (configTranscribeQs.includes(q.xpath) || analyzeOn) ? 'true' : 'false';
+          const aPressed = analyzeOn ? 'true' : 'false';
           const aHasPrompt = !!questionPrompts.analyzeAudio[q.xpath];
-          const aPromptBtn = '<button type="button" class="prompt-edit-btn' + (aHasPrompt ? ' has-prompt' : '') + '" data-xpath="' + escHtml(q.xpath) + '" data-type="analyzeAudio" onclick="event.stopPropagation();openPromptModal(this.dataset.xpath,this.dataset.type)" title="' + (aHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>';
-          subRow = '<label class="question-sub-item"><input type="checkbox" name="transcribe-q" value="' +
-            escHtml(q.xpath) + '"' + tChecked + tDisabled + '/>' + SPARKLE_SVG + '<span>Transcribe</span>' +
-            '<span class="q-output">\u2192 ' + escHtml(q.xpath) + '_transcript</span></label>' +
-            '<label class="question-sub-item"><input type="checkbox" name="analyze-audio-q" value="' +
-            escHtml(q.xpath) + '"' + aChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' + aPromptBtn +
-            '<span class="q-output">\u2192 (JSON fields)</span></label>';
+          pills = '<div class="q-pills">' +
+            '<button type="button" class="q-pill" aria-pressed="' + tPressed + '" data-feature="transcribe" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Transcribe</button>' +
+            '<button type="button" class="q-pill" aria-pressed="' + aPressed + '" data-feature="analyze" data-type="analyzeAudio" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
+            '<button type="button" class="q-prompt-btn' + (aHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="analyzeAudio" data-xpath="' + escHtml(q.xpath) + '" title="' + (aHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
+            '</div>';
         } else if (q.type === 'image' || q.type === 'photo') {
-          const eChecked = configExtractQs.includes(q.xpath) ? ' checked' : '';
+          badge = '<span class="q-badge q-badge--image">IMAGE</span>';
+          const ePressed = configExtractQs.includes(q.xpath) ? 'true' : 'false';
           const eHasPrompt = !!questionPrompts.extract[q.xpath];
-          const ePromptBtn = '<button type="button" class="prompt-edit-btn' + (eHasPrompt ? ' has-prompt' : '') + '" data-xpath="' + escHtml(q.xpath) + '" data-type="extract" onclick="event.stopPropagation();openPromptModal(this.dataset.xpath,this.dataset.type)" title="' + (eHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>';
-          subRow = '<label class="question-sub-item"><input type="checkbox" name="extract-q" value="' +
-            escHtml(q.xpath) + '"' + eChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' + ePromptBtn +
-            '<span class="q-output">\u2192 (JSON fields)</span></label>';
+          pills = '<div class="q-pills">' +
+            '<button type="button" class="q-pill" aria-pressed="' + ePressed + '" data-feature="analyze" data-type="extract" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
+            '<button type="button" class="q-prompt-btn' + (eHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="extract" data-xpath="' + escHtml(q.xpath) + '" title="' + (eHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
+            '</div>';
         } else if (q.type === 'text') {
-          const tChecked = configExtractTextQs.includes(q.xpath) ? ' checked' : '';
+          badge = '<span class="q-badge q-badge--text">TEXT</span>';
+          const tPressed = configExtractTextQs.includes(q.xpath) ? 'true' : 'false';
           const tHasPrompt = !!questionPrompts.extractText[q.xpath];
-          const tPromptBtn = '<button type="button" class="prompt-edit-btn' + (tHasPrompt ? ' has-prompt' : '') + '" data-xpath="' + escHtml(q.xpath) + '" data-type="extractText" onclick="event.stopPropagation();openPromptModal(this.dataset.xpath,this.dataset.type)" title="' + (tHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>';
-          subRow = '<label class="question-sub-item"><input type="checkbox" name="extract-text-q" value="' +
-            escHtml(q.xpath) + '"' + tChecked + '/>' + SPARKLE_SVG + '<span>Analyze</span>' + tPromptBtn +
-            '<span class="q-output">\u2192 (JSON fields)</span></label>';
+          pills = '<div class="q-pills">' +
+            '<button type="button" class="q-pill" aria-pressed="' + tPressed + '" data-feature="analyze" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
+            '<button type="button" class="q-prompt-btn' + (tHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '" title="' + (tHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
+            '</div>';
         }
-        return subRow ? '<div>' + mainRow + subRow + '</div>' : mainRow;
+        return '<div class="q-row" data-xpath="' + escHtml(q.xpath) + '">' +
+          '<label class="q-include"><input type="checkbox" name="field" value="' + escHtml(q.xpath) + '"' + checked + ' />' +
+          '<span class="q-label" title="' + escHtml(q.label) + '">' + escHtml(q.label) + '</span></label>' +
+          xpathSpan + badge + pills +
+          '</div>';
       }).join('');
       updateFieldsCount();
     }
@@ -517,22 +529,19 @@ ui.get("/:uid", (c) => {
     }
 
     function getSelectedAudioQs() {
-      // Include both explicitly checked and disabled-but-forced-on transcribe checkboxes
-      return Array.from(document.querySelectorAll('#fields-list input[name="transcribe-q"]'))
-        .filter(cb => cb.checked || cb.disabled)
-        .map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list .q-pill[data-feature="transcribe"][aria-pressed="true"]')).map(b => b.dataset.xpath);
     }
 
     function getSelectedExtractQs() {
-      return Array.from(document.querySelectorAll('#fields-list input[name="extract-q"]:checked')).map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list .q-pill[data-feature="analyze"][data-type="extract"][aria-pressed="true"]')).map(b => b.dataset.xpath);
     }
 
     function getSelectedAnalyzeAudioQs() {
-      return Array.from(document.querySelectorAll('#fields-list input[name="analyze-audio-q"]:checked')).map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list .q-pill[data-feature="analyze"][data-type="analyzeAudio"][aria-pressed="true"]')).map(b => b.dataset.xpath);
     }
 
     function getSelectedExtractTextQs() {
-      return Array.from(document.querySelectorAll('#fields-list input[name="extract-text-q"]:checked')).map(cb => cb.value);
+      return Array.from(document.querySelectorAll('#fields-list .q-pill[data-feature="analyze"][data-type="extractText"][aria-pressed="true"]')).map(b => b.dataset.xpath);
     }
 
     // ── Per-question prompt modal ─────────────────────────────────────────────
@@ -557,10 +566,18 @@ ui.get("/:uid", (c) => {
         delete questionPrompts[_promptType][_promptXpath];
       }
       document.getElementById('prompt-modal').classList.remove('open');
+      // Update just the prompt button for this question without re-rendering the whole list
+      const promptBtn = document.querySelector(
+        '#fields-list .q-prompt-btn[data-type="' + CSS.escape(_promptType) + '"][data-xpath="' + CSS.escape(_promptXpath) + '"]'
+      );
+      if (promptBtn) {
+        const hasPrompt = !!questionPrompts[_promptType][_promptXpath];
+        promptBtn.classList.toggle('has-prompt', hasPrompt);
+        promptBtn.title = hasPrompt ? 'Edit instructions (set)' : 'Add instructions';
+      }
       _promptXpath = null;
       _promptType = null;
       markDirty();
-      renderFieldsList();
     }
 
     function closeQPromptModal(e) {
@@ -604,23 +621,39 @@ ui.get("/:uid", (c) => {
     });
 
     document.getElementById('fields-list').addEventListener('change', function(e) {
-      updateFieldsCount();
-      // If an "Analyze" checkbox for audio changes, sync the sibling "Transcribe" checkbox
+      if (e.target && e.target.name === 'field') updateFieldsCount();
+    });
+
+    document.getElementById('fields-list').addEventListener('click', function(e) {
       const target = e.target;
-      if (target && target.name === 'analyze-audio-q') {
-        // The structure is: <div><label.question-item/><label.question-sub-item/><label.question-sub-item/></div>
-        const container = target.closest('div');
-        if (container) {
-          const transcribeBox = container.querySelector('input[name="transcribe-q"][value="' + CSS.escape(target.value) + '"]');
-          if (transcribeBox) {
-            if (target.checked) {
-              transcribeBox.checked = true;
-              transcribeBox.disabled = true;
-            } else {
-              transcribeBox.disabled = false;
-            }
+      if (!target) return;
+      // Pill toggle
+      if (target.classList.contains('q-pill')) {
+        const feature = target.dataset.feature;
+        const row = target.closest('.q-row');
+        if (feature === 'transcribe') {
+          const pressed = target.getAttribute('aria-pressed') === 'true';
+          // Don't allow unchecking transcribe while analyze is active (analyze forces it on)
+          if (pressed && row) {
+            const analyzeBtn = row.querySelector('.q-pill[data-feature="analyze"]');
+            if (analyzeBtn && analyzeBtn.getAttribute('aria-pressed') === 'true') return;
           }
+          target.setAttribute('aria-pressed', String(!pressed));
+          markDirty();
+        } else if (feature === 'analyze') {
+          const pressed = target.getAttribute('aria-pressed') === 'true';
+          target.setAttribute('aria-pressed', String(!pressed));
+          // Turning on analyzeAudio forces transcribe on too
+          if (!pressed && target.dataset.type === 'analyzeAudio' && row) {
+            const transcribeBtn = row.querySelector('.q-pill[data-feature="transcribe"]');
+            if (transcribeBtn) transcribeBtn.setAttribute('aria-pressed', 'true');
+          }
+          markDirty();
         }
+      }
+      // Prompt button
+      if (target.classList.contains('q-prompt-btn')) {
+        openPromptModal(target.dataset.xpath, target.dataset.type);
       }
     });
 
