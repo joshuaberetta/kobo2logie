@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import type { Env, LogEntry } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
-import { resolveSubmissionId, editSubmission, resolveKoboEditToken } from "../lib/koboEdit.js";
+import { resolveSubmissionId, editSubmission, resolveKoboEditToken, updateValidationStatus } from "../lib/koboEdit.js";
 import { geocodeSubmission } from "../lib/geocode.js";
+import { callValidationAI } from "../lib/validateSubmission.js";
 
 const hook = new Hono<{ Bindings: Env }>();
 
@@ -118,7 +119,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification, validateSubmission } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
@@ -133,8 +134,9 @@ hook.post("/:formUID", async (c) => {
       geocodeField?: string;
       server?: string;
       emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } };
+      validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
     };
-    if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification) {
+    if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
       const submission = body as KoboSubmission;
 
       // Build a filtered payload if the user has specified a fields subset (forwarding only)
@@ -234,6 +236,18 @@ hook.post("/:formUID", async (c) => {
           let editHttpStatus: number | undefined;
           let editError: string | undefined;
 
+          // Resolve _id once if either editOriginal or validateSubmission needs it
+          let resolvedSubmissionId: number | null | undefined; // undefined = not yet resolved
+          const needsId = (editOriginal || !!validateSubmission) && !!server && !!submission._uuid;
+          let koboEditToken: string | undefined;
+          if (needsId && server) {
+            koboEditToken = resolveKoboEditToken(server, {
+              global: c.env.KOBO_API_TOKEN_GLOBAL,
+              eu: c.env.KOBO_API_TOKEN_EU,
+            });
+            resolvedSubmissionId = await resolveSubmissionId(server, formUID, submission._uuid!, koboEditToken);
+          }
+
           if (editOriginal && server && submission._uuid) {
             // Build edit payload: flat appendValues + enrichment from forward step.
             // _uuid must never be written back as a field value.
@@ -246,13 +260,8 @@ hook.post("/:formUID", async (c) => {
             }
 
             if (Object.keys(editData).length > 0) {
-              const koboToken = resolveKoboEditToken(server, {
-                global: c.env.KOBO_API_TOKEN_GLOBAL,
-                eu: c.env.KOBO_API_TOKEN_EU,
-              });
-              const submissionId = await resolveSubmissionId(server, formUID, submission._uuid, koboToken);
-              if (submissionId !== null) {
-                const editResult = await editSubmission(server, formUID, submissionId, editData, koboToken);
+              if (resolvedSubmissionId !== null && resolvedSubmissionId !== undefined) {
+                const editResult = await editSubmission(server, formUID, resolvedSubmissionId, editData, koboEditToken!);
                 editOk = editResult.ok;
                 editHttpStatus = editResult.httpStatus;
                 editError = editResult.error;
@@ -260,6 +269,49 @@ hook.post("/:formUID", async (c) => {
                 editOk = false;
                 editError = "Could not resolve _id from _uuid";
               }
+            }
+          }
+
+          // ── Step 3: Validate submission with AI ───────────────────────────
+          let validateOk: boolean | undefined;
+          let validateHttpStatus: number | undefined;
+          let validateError: string | undefined;
+
+          if (validateSubmission && server && submission._uuid && openaiApiKey) {
+            const valId = resolvedSubmissionId !== undefined
+              ? resolvedSubmissionId
+              : await resolveSubmissionId(server, formUID, submission._uuid, koboEditToken ?? resolveKoboEditToken(server, { global: c.env.KOBO_API_TOKEN_GLOBAL, eu: c.env.KOBO_API_TOKEN_EU }));
+
+            if (valId !== null) {
+              const aiResult = await callValidationAI(
+                openaiApiKey,
+                submission as Record<string, unknown>,
+                validateSubmission.instructions,
+                validateSubmission.options
+              );
+              if (aiResult) {
+                const statusMap = {
+                  approved: "validation_status_approved",
+                  not_approved: "validation_status_not_approved",
+                  on_hold: "validation_status_on_hold",
+                } as const;
+                const vToken = koboEditToken ?? resolveKoboEditToken(server, { global: c.env.KOBO_API_TOKEN_GLOBAL, eu: c.env.KOBO_API_TOKEN_EU });
+                const valResult = await updateValidationStatus(server, formUID, valId, statusMap[aiResult.decision], vToken);
+                validateOk = valResult.ok;
+                validateHttpStatus = valResult.httpStatus;
+                validateError = valResult.error;
+
+                // Optionally write reasoning back to the submission
+                if (validateSubmission.includeReasoning && aiResult.reasoning) {
+                  await editSubmission(server, formUID, valId, { _ai_validation_reasoning: aiResult.reasoning }, vToken);
+                }
+              } else {
+                validateOk = false;
+                validateError = "AI returned no result";
+              }
+            } else {
+              validateOk = false;
+              validateError = "Could not resolve _id from _uuid";
             }
           }
 
@@ -274,6 +326,9 @@ hook.post("/:formUID", async (c) => {
             ...(editOk !== undefined ? { editOk } : {}),
             ...(editHttpStatus !== undefined ? { editHttpStatus } : {}),
             ...(editError !== undefined ? { editError } : {}),
+            ...(validateOk !== undefined ? { validateOk } : {}),
+            ...(validateHttpStatus !== undefined ? { validateHttpStatus } : {}),
+            ...(validateError !== undefined ? { validateError } : {}),
           };
           await stub.fetch("https://do/log", {
             method: "POST",

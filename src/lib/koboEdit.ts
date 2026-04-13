@@ -75,3 +75,40 @@ export async function editSubmission(
     return { ok: false, httpStatus: 0, error: String(err) };
   }
 }
+
+/**
+ * Sets the validation status of a submission using the Kobo per-submission
+ * validation_status endpoint.
+ */
+export async function updateValidationStatus(
+  server: string,
+  uid: string,
+  id: number,
+  status:
+    | "validation_status_approved"
+    | "validation_status_not_approved"
+    | "validation_status_on_hold",
+  token: string
+): Promise<{ ok: boolean; httpStatus: number; error?: string }> {
+  try {
+    const url = `${server}/api/v2/assets/${uid}/data/${id}/validation_status/`;
+    const body = new URLSearchParams({ "validation_status.uid": status });
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Token ${token}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.error(`[validate] updateValidationStatus failed: HTTP ${res.status} — ${text.slice(0, 200)}`);
+      return { ok: false, httpStatus: res.status, error: text.slice(0, 500) };
+    }
+    return { ok: true, httpStatus: res.status };
+  } catch (err) {
+    console.error("[validate] updateValidationStatus error:", err);
+    return { ok: false, httpStatus: 0, error: String(err) };
+  }
+}

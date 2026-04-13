@@ -207,6 +207,7 @@ configure.get("/project/:uid", async (c) => {
         geocode?: boolean;
         geocodeField?: string;
         emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null };
+        validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
       })
     : {};
   return c.json({
@@ -224,6 +225,7 @@ configure.get("/project/:uid", async (c) => {
     geocode: config.geocode ?? false,
     geocodeField: config.geocodeField ?? "",
     emailNotification: config.emailNotification ?? null,
+    validateSubmission: config.validateSubmission ?? null,
   });
 });
 
@@ -231,7 +233,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification, validateSubmission } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
@@ -245,6 +247,7 @@ configure.post("/project/:uid", async (c) => {
     geocode?: boolean;
     geocodeField?: string;
     emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null } | null;
+    validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } } | null;
   }>();
 
   if (forwardUrl) {
@@ -438,7 +441,21 @@ configure.post("/project/:uid", async (c) => {
     };
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && !geocode && safeEmailNotification === undefined) {
+  // Sanitise validateSubmission config if provided
+  let safeValidateSubmission: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } } | undefined;
+  if (validateSubmission != null) {
+    safeValidateSubmission = {
+      instructions: String(validateSubmission.instructions ?? "").trim(),
+      includeReasoning: validateSubmission.includeReasoning !== false,
+      options: {
+        approved:    String(validateSubmission.options?.approved    ?? "").trim(),
+        notApproved: String(validateSubmission.options?.notApproved ?? "").trim(),
+        onHold:      String(validateSubmission.options?.onHold      ?? "").trim(),
+      },
+    };
+  }
+
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && !geocode && safeEmailNotification === undefined && safeValidateSubmission === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -496,6 +513,12 @@ configure.post("/project/:uid", async (c) => {
       delete next.emailNotification;
     } else if (safeEmailNotification !== undefined) {
       next.emailNotification = safeEmailNotification;
+    }
+    // validateSubmission: null means "clear", undefined means "don't touch"
+    if (validateSubmission === null) {
+      delete next.validateSubmission;
+    } else if (safeValidateSubmission !== undefined) {
+      next.validateSubmission = safeValidateSubmission;
     }
     // geocode: always written (boolean, defaults to false)
     next.geocode = geocode === true;

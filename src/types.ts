@@ -9,6 +9,9 @@ export interface LogEntry {
   editOk?: boolean;        // true = edit-back succeeded, false = failed, absent = not attempted
   editHttpStatus?: number; // HTTP status from the Kobo bulk-edit endpoint
   editError?: string;      // error message if edit-back failed
+  validateOk?: boolean;        // true = validation status set, false = failed, absent = not attempted
+  validateHttpStatus?: number; // HTTP status from the Kobo validation_status endpoint
+  validateError?: string;      // error message if validation failed
 }
 
 export interface Env {

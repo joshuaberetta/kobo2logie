@@ -403,6 +403,14 @@ ui.get("/:uid", (c) => {
 
           <div>
             <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+              <label class="checkbox-row"><input type="checkbox" id="validate-submission" autocomplete="off" /><span>Validate submission with AI</span></label>
+              <button type="button" class="select-btn" id="validate-configure-btn" style="display:none" onclick="openValidateModal()">Configure&hellip;</button>
+            </div>
+            <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Use AI to review the submission and set its validation status (Approved, Not Approved, On Hold) in KoboToolbox. Requires API token configured during setup.</p>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
               <label class="checkbox-row"><input type="checkbox" id="email-notification-enabled" autocomplete="off" /><span>Email notifications</span></label>
               <button type="button" class="select-btn" id="email-configure-btn" style="display:none" onclick="openEmailModal()">Configure&hellip;</button>
             </div>
@@ -524,6 +532,41 @@ ui.get("/:uid", (c) => {
     </div>
   </div>
 
+  <div class="modal-overlay" id="validate-modal" onclick="closeValidateOverlay(event)">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <span class="modal-title">AI validation settings</span>
+        <button type="button" class="modal-close" onclick="closeValidateModal(false)">&times;</button>
+      </div>
+      <div class="modal-body" style="gap:.9rem">
+        <div>
+          <label for="validate-instructions" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Instructions<span class="label-hint">overall context to give the model about this form</span></label>
+          <textarea id="validate-instructions" rows="3" placeholder="e.g. This is a field assessment completed by a data collector in the field&hellip;"></textarea>
+        </div>
+        <div>
+          <label style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Approved<span class="label-hint">describe what qualifies a submission as Approved</span></label>
+          <textarea id="validate-opt-approved" rows="2" placeholder="e.g. All required fields are filled and responses are consistent with no contradictions."></textarea>
+        </div>
+        <div>
+          <label style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Not Approved<span class="label-hint">describe what qualifies a submission as Not Approved</span></label>
+          <textarea id="validate-opt-not-approved" rows="2" placeholder="e.g. Critical fields are missing or responses clearly contradict each other."></textarea>
+        </div>
+        <div>
+          <label style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">On Hold<span class="label-hint">describe what qualifies a submission as On Hold</span></label>
+          <textarea id="validate-opt-on-hold" rows="2" placeholder="e.g. Minor issues present that require follow-up before a final decision."></textarea>
+        </div>
+        <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:.65rem .75rem">
+          <label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" id="validate-include-reasoning" autocomplete="off" checked /><span style="font-size:.85rem;font-weight:600;color:#444">Include reasoning in submission</span></label>
+          <p style="font-size:.78rem;color:#6b7280;margin:.3rem 0 0 1.55rem">Writes the AI&rsquo;s explanation back to the submission as <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_ai_validation_reasoning</code>.</p>
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
+          <button type="button" class="select-btn" onclick="closeValidateModal(false)">Cancel</button>
+          <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="closeValidateModal(true)">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const UID = ${raw(JSON.stringify(uid))};
     const SPARKLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
@@ -540,6 +583,8 @@ ui.get("/:uid", (c) => {
 
     // Email notification config (null = disabled)
     let emailNotificationConfig = null;
+    // Validate submission config (null = disabled)
+    let validateConfig = null;
 
     // Current state for the prompt modal
     let _promptXpath = null;
@@ -730,6 +775,42 @@ ui.get("/:uid", (c) => {
       if (e && e.target !== document.getElementById('email-modal')) return;
       closeEmailModal(false);
     }
+
+    function closeValidateOverlay(e) {
+      if (e && e.target !== document.getElementById('validate-modal')) return;
+      closeValidateModal(false);
+    }
+
+    function openValidateModal() {
+      var cfg = validateConfig || {};
+      document.getElementById('validate-instructions').value = cfg.instructions || '';
+      document.getElementById('validate-opt-approved').value = (cfg.options && cfg.options.approved) || '';
+      document.getElementById('validate-opt-not-approved').value = (cfg.options && cfg.options.notApproved) || '';
+      document.getElementById('validate-opt-on-hold').value = (cfg.options && cfg.options.onHold) || '';
+      document.getElementById('validate-include-reasoning').checked = cfg.includeReasoning !== false;
+      document.getElementById('validate-modal').classList.add('open');
+    }
+
+    function closeValidateModal(save) {
+      if (save) {
+        validateConfig = {
+          instructions: document.getElementById('validate-instructions').value.trim(),
+          includeReasoning: document.getElementById('validate-include-reasoning').checked,
+          options: {
+            approved: document.getElementById('validate-opt-approved').value.trim(),
+            notApproved: document.getElementById('validate-opt-not-approved').value.trim(),
+            onHold: document.getElementById('validate-opt-on-hold').value.trim(),
+          },
+        };
+        markDirty();
+      }
+      document.getElementById('validate-modal').classList.remove('open');
+    }
+
+    document.getElementById('validate-submission').addEventListener('change', function() {
+      document.getElementById('validate-configure-btn').style.display = this.checked ? '' : 'none';
+      markDirty();
+    });
 
     const EMAIL_AI_DEFAULT_INSTRUCTIONS = 'Write a clean, professional HTML notification email summarising the form submission.\\n\\nGuidelines:\\n- Start with a brief heading (e.g. "New submission received")\\n- Show key fields in a simple two-column table (label | value)\\n- Skip internal metadata fields that start with _ (except _uuid and _submission_time)\\n- End with a short note that this was sent automatically by the kobo2logie integration';
 
@@ -961,6 +1042,11 @@ ui.get("/:uid", (c) => {
         document.getElementById('edit-original').checked = !!data.editOriginal;
         geocodeXpath = data.geocodeField || null;
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
+        if (data.validateSubmission) {
+          validateConfig = data.validateSubmission;
+          document.getElementById('validate-submission').checked = true;
+          document.getElementById('validate-configure-btn').style.display = '';
+        }
         if (data.emailNotification) {
           emailNotificationConfig = data.emailNotification;
           document.getElementById('email-notification-enabled').checked = true;
@@ -1016,7 +1102,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification: emailNotificationConfig }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
@@ -1078,6 +1164,11 @@ ui.get("/:uid", (c) => {
         if (e.editHttpStatus != null) rows += '<div class="modal-row"><span class="modal-label">Edit HTTP</span><span class="modal-value">HTTP ' + escHtml(String(e.editHttpStatus)) + '</span></div>';
         if (e.editError) rows += '<div class="modal-row"><span class="modal-label">Edit error</span><pre class="modal-pre">' + escHtml(e.editError) + '</pre></div>';
       }
+      if (e.validateOk !== undefined) {
+        rows += '<div class="modal-row"><span class="modal-label">Validate result</span><span class="modal-value">' + (e.validateOk ? '\u2713 Status set' : '\u2717 Failed') + '</span></div>';
+        if (e.validateHttpStatus != null) rows += '<div class="modal-row"><span class="modal-label">Validate HTTP</span><span class="modal-value">HTTP ' + escHtml(String(e.validateHttpStatus)) + '</span></div>';
+        if (e.validateError) rows += '<div class="modal-row"><span class="modal-label">Validate error</span><pre class="modal-pre">' + escHtml(e.validateError) + '</pre></div>';
+      }
       document.getElementById('modal-title').textContent = e.ok ? '\u2713 Submission forwarded' : '\u2717 Forwarding failed';
       document.getElementById('modal-body').innerHTML = rows;
       document.getElementById('log-modal').classList.add('open');
@@ -1102,6 +1193,11 @@ ui.get("/:uid", (c) => {
           : e.editOk === false
             ? '<span class="log-badge fail">\u2717 Fail</span>'
             : '\u2014';
+        const validateBadge = e.validateOk === true
+          ? '<span class="log-badge ok">\u2713 OK</span>'
+          : e.validateOk === false
+            ? '<span class="log-badge fail">\u2717 Fail</span>'
+            : '\u2014';
         const httpCell = e.httpStatus != null ? escHtml(String(e.httpStatus)) : '\u2014';
         const subId = escHtml(e.uuid ? e.uuid.slice(0, 8) + '\u2026' : (e.id != null ? String(e.id) : '\u2014'));
         return '<tr>' +
@@ -1109,6 +1205,7 @@ ui.get("/:uid", (c) => {
           '<td title="' + escHtml(e.uuid ?? '') + '">' + subId + '</td>' +
           '<td>' + badge + '</td>' +
           '<td>' + editBadge + '</td>' +
+          '<td>' + validateBadge + '</td>' +
           '<td style="color:#6b7280">' + httpCell + '</td>' +
           '<td><button type="button" class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button></td>' +
           '</tr>';
@@ -1174,7 +1271,7 @@ ui.get("/:uid", (c) => {
         }
         container.innerHTML =
           '<table class="log-table"><thead><tr>' +
-          '<th>Time</th><th>Submission ID</th><th>Fwd</th><th>Edit</th><th>HTTP</th><th></th>' +
+          '<th>Time</th><th>Submission ID</th><th>Fwd</th><th>Edit</th><th>Validate</th><th>HTTP</th><th></th>' +
           '</tr></thead><tbody>' + renderLogRows(logEntries, 0) + '</tbody></table>';
         if (logHasMore) {
           container.insertAdjacentHTML('beforeend',
