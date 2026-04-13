@@ -15,11 +15,11 @@ accommodate it from the start.
 
 ## New Service: `typst-doc-service`
 
-A small, stateless Node/TypeScript HTTP app that:
+A small, stateless Python/FastAPI app that:
 1. Accepts a JSON body describing what to render
 2. Writes the data to a temp directory alongside the appropriate Typst template
 3. Shells out to the Typst CLI to compile the `.typ` → PDF
-4. Streams the PDF bytes back in the response
+4. Returns the PDF bytes in the response
 5. Cleans up temp files
 
 ### Why Typst
@@ -127,12 +127,11 @@ regardless of the exact field set (dynamic rendering), with special handling for
 ```
 typst-doc-service/
   Dockerfile
-  package.json
-  tsconfig.json
-  src/
-    index.ts          # Express/Hono HTTP server
-    render.ts         # core render logic: temp dir, run typst, return bytes
-    types.ts          # RenderRequest, RenderMeta, etc.
+  requirements.txt
+  app/
+    main.py           # FastAPI app, routes
+    render.py         # core render logic: temp dir, run typst, return bytes
+    models.py         # Pydantic request/response models
   templates/
     submission.typ    # single-submission template
     summary.typ       # aggregate summary template (stub for now, enabled later)
@@ -140,80 +139,119 @@ typst-doc-service/
   docker-compose.yml  # optional compose for local dev
 ```
 
-### Node HTTP server (`src/index.ts`)
+### FastAPI server (`app/main.py`)
 
-Use **Hono** (consistent with kobo2logie) with the Node.js adapter (`@hono/node-server`). One
-route: `POST /render`. A second `POST /render/summary` route can be added later without any
+One route: `POST /render`. A second `POST /render/summary` route can be added later without any
 structural changes.
 
-```ts
-import { Hono } from "hono";
-import { serve } from "@hono/node-server";
-import { handleRender } from "./render.js";
+```python
+import asyncio
+import logging
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
+from app.models import RenderRequest
+from app.render import render_submission
 
-const app = new Hono();
-app.post("/render", handleRender);
+logger = logging.getLogger(__name__)
+app = FastAPI()
 
-serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 3000) });
+@app.post("/render")
+async def render(req: RenderRequest) -> Response:
+    try:
+        pdf_bytes = await render_submission(req.template, req.data, req.meta or {})
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except asyncio.TimeoutError:
+        logger.error("[pdf] typst compile timed out for template '%s'", req.template)
+        raise HTTPException(status_code=504, detail="Render timed out")
+    except RuntimeError as e:
+        logger.error("[pdf] render failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    uuid = req.data.get("_uuid", "submission")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="submission-{uuid}.pdf"'},
+    )
 ```
 
 Keep the server minimal — no auth middleware in initial build (rely on network-level isolation;
 the service is not exposed publicly). Add a simple bearer-token check via an `API_SECRET` env
-var if the server requires a public port.
+var using a FastAPI dependency if the port must be reachable from outside a private network.
 
-### Render logic (`src/render.ts`)
+### Pydantic models (`app/models.py`)
 
-```ts
-import { execFile } from "node:child_process";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
+```python
+from typing import Any
+from pydantic import BaseModel
 
-const execFileAsync = promisify(execFile);
-const TEMPLATES_DIR = new URL("../templates", import.meta.url).pathname;
-const TYPST_BIN = process.env.TYPST_BIN ?? "typst";
-
-export async function renderSubmission(
-  templateName: string,
-  data: Record<string, unknown>,
-  meta: Record<string, unknown>
-): Promise<Buffer> {
-  const dir = await mkdtemp(join(tmpdir(), "typst-"));
-  try {
-    // Write the JSON payload that the .typ template will read
-    await writeFile(join(dir, "data.json"), JSON.stringify({ data, meta }));
-    // Copy/symlink the template into the temp dir so relative imports work
-    const inputPath = join(TEMPLATES_DIR, `${templateName}.typ`);
-    const outputPath = join(dir, "output.pdf");
-    await execFileAsync(TYPST_BIN, ["compile", inputPath, outputPath, "--root", dir], {
-      timeout: 30_000,
-    });
-    return await readFile(outputPath);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
+class RenderRequest(BaseModel):
+    template: str
+    data: dict[str, Any]
+    meta: dict[str, Any] | None = None
 ```
 
-**Security note**: `templateName` must be validated against an allowlist of known template names
-before constructing the file path — never pass it raw to avoid path traversal:
+### Render logic (`app/render.py`)
 
-```ts
-const ALLOWED_TEMPLATES = new Set(["submission", "summary"]);
-if (!ALLOWED_TEMPLATES.has(templateName)) {
-  throw new Error("Unknown template");
-}
+```python
+import asyncio
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+TYPST_BIN = os.environ.get("TYPST_BIN", "typst")
+ALLOWED_TEMPLATES = {"submission", "summary"}
+
+async def render_submission(
+    template_name: str,
+    data: dict,
+    meta: dict,
+) -> bytes:
+    if template_name not in ALLOWED_TEMPLATES:
+        raise ValueError(f"Unknown template: {template_name}")
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="typst-"))
+    try:
+        (tmp_dir / "data.json").write_text(
+            json.dumps({"data": data, "meta": meta}), encoding="utf-8"
+        )
+        input_path = TEMPLATES_DIR / f"{template_name}.typ"
+        output_path = tmp_dir / "output.pdf"
+        proc = await asyncio.create_subprocess_exec(
+            TYPST_BIN, "compile", str(input_path), str(output_path),
+            "--root", str(tmp_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        if proc.returncode != 0:
+            raise RuntimeError(f"typst failed: {stderr.decode()[:500]}")
+        return output_path.read_bytes()
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 ```
+
+**Security note**: `template_name` is validated against `ALLOWED_TEMPLATES` before any file
+path is constructed — this prevents path traversal regardless of what the caller sends.
 
 ### Typst template (`templates/submission.typ`)
 
-The template reads the JSON file written by the Node process:
+The template reads the JSON file written by the Python process:
 
 ```typst
 #let payload = json("/data.json")
 #let data    = payload.data
 #let meta    = payload.meta
+
+// Helper: safely convert any value to a display string
+#let val-str(v) = {
+  if type(v) == str { v }
+  else if type(v) == array { v.map(it => val-str(it)).join(", ") }
+  else { repr(v) }
+}
 
 #set document(title: meta.at("formTitle", default: "Submission Report"))
 #set page(margin: 1.5cm)
@@ -236,13 +274,15 @@ The template reads the JSON file written by the Node process:
 #line(length: 100%)
 
 // ── Response fields ──────────────────────────────────────────────────
-// Group fields by prefix, skip internal Kobo metadata except key identifiers
-#let skip_keys = ("_attachments", "_validation_status", "_submitted_by",
-                  "_tags", "_notes", "_status", "_bamboo_dataset_id",
-                  "_xform_id_string", "_version_", "formhub")
+// Skip internal Kobo metadata and geo fields (rendered separately below)
+#let skip_prefixes = ("_attachments", "_validation_status", "_submitted_by",
+                      "_tags", "_notes", "_status", "_bamboo_dataset_id",
+                      "_xform_id_string", "_version_", "formhub",
+                      "_geo_", "_geolocation", "_id", "_uuid",
+                      "_submission_time")
 
 #let display_fields = data.pairs().filter(pair =>
-  not skip_keys.any(sk => pair.first().starts-with(sk))
+  not skip_prefixes.any(sk => pair.first().starts-with(sk))
 )
 
 #table(
@@ -252,7 +292,7 @@ The template reads the JSON file written by the Node process:
   fill: (_, row) => if calc.odd(row) { luma(245) } else { white },
   ..display_fields.map(pair => (
     text(weight: "bold", pair.first()),
-    str(pair.last()),
+    val-str(pair.last()),
   )).flatten()
 )
 
@@ -266,7 +306,10 @@ The template reads the JSON file written by the Node process:
     columns: (auto, 1fr),
     stroke: 0.5pt + luma(200),
     inset: 6pt,
-    ..geo_fields.map(pair => (pair.first(), str(pair.last()))).flatten()
+    ..geo_fields.map(pair => (
+      text(weight: "bold", pair.first()),
+      val-str(pair.last()),
+    )).flatten()
   )
 ]
 ```
@@ -281,31 +324,32 @@ with field labels instead of xpath names, or multiple sections) can be added lat
 ## Dockerfile
 
 ```dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package.json tsconfig.json ./
-RUN npm ci
-COPY src/ src/
-RUN npm run build
-
-FROM node:20-alpine
+FROM python:3.12-slim
 WORKDIR /app
 
 # Install Typst CLI from the official musl binary release
-RUN apk add --no-cache wget xz \
+RUN apt-get update && apt-get install -y --no-install-recommends wget xz-utils \
   && wget -qO- https://github.com/typst/typst/releases/download/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz \
      | tar -xJ --strip-components=1 -C /usr/local/bin typst-x86_64-unknown-linux-musl/typst \
-  && typst --version
+  && typst --version \
+  && apt-get purge -y wget xz-utils && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/dist ./dist
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app/ app/
 COPY templates/ templates/
-COPY package.json ./
-RUN npm ci --omit=dev
 
 ENV PORT=3000
 ENV TYPST_BIN=typst
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000"]
+```
+
+`requirements.txt`:
+```
+fastapi>=0.111
+uvicorn[standard]>=0.29
 ```
 
 Pin the Typst version explicitly (shown as `v0.11.1` above) and update it deliberately —
@@ -426,8 +470,8 @@ services:
 
 Keep the service off the public internet. kobo2logie (Cloudflare Worker) reaches it via an
 outbound call to `http://your-vps-ip:3100` (or a domain name). Add a simple `Authorization:
-Bearer {API_SECRET}` header check in the Node server if the port must be reachable from outside
-a private network.
+Bearer {API_SECRET}` header check via a FastAPI dependency if the port must be reachable from
+outside a private network.
 
 ### Fly.io / Railway option
 
@@ -438,10 +482,12 @@ same region as a target platform. The service URL would then be the Fly internal
 
 ## Logging
 
-- Success: log `[pdf] rendered ${template} for ${_uuid} — ${bytes} bytes, emailed to ${to}`
-- Typst compile error: log the full stderr from the child process
-- Network failure (can't reach service): log and set `pdfOk: false` — never throw
-- All logging goes through `console.error` / `console.log` — visible in Cloudflare Worker logs
+- Success (kobo2logie side): log `[pdf] rendered {template} for {_uuid} — {bytes} bytes, emailed to {to}`
+- Typst compile error (service side): `logger.error` with full stderr from the subprocess
+- Timeout (service side): logged before raising 504
+- Network failure (kobo2logie side): caught in `generateAndEmailPdf`, sets `pdfOk: false` — never throws
+- kobo2logie logging goes through `console.error` / `console.log` — visible in Cloudflare Worker logs
+- Service logging uses Python's standard `logging` module — visible in Docker container stdout via uvicorn's access log
 
 ---
 
@@ -505,13 +551,12 @@ Compared to `/render`, this endpoint needs to:
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | Multi-stage build; installs Typst CLI |
+| `Dockerfile` | Single-stage Python image; installs Typst CLI |
 | `docker-compose.yml` | Local dev + server deployment |
-| `package.json` | Node deps: `hono`, `@hono/node-server` |
-| `tsconfig.json` | ESM, Node20 target |
-| `src/index.ts` | HTTP server |
-| `src/render.ts` | Render logic, executes Typst |
-| `src/types.ts` | `RenderRequest`, `RenderMeta` |
+| `requirements.txt` | `fastapi`, `uvicorn[standard]` |
+| `app/main.py` | FastAPI app, routes |
+| `app/render.py` | Render logic, executes Typst via asyncio subprocess |
+| `app/models.py` | Pydantic `RenderRequest` model |
 | `templates/submission.typ` | Single-submission PDF template |
 | `templates/summary.typ` | Stub file (future) |
 
