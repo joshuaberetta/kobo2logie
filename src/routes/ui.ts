@@ -524,6 +524,10 @@ ui.get("/:uid", (c) => {
           <label for="email-body" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Body<span class="label-hint">use {{field_name}} for submission values</span></label>
           <textarea id="email-body" rows="5" placeholder="A new submission was received."></textarea>
         </div>
+        <div id="email-attachments-section" style="display:none">
+          <label style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Attach media files<span class="label-hint">fetched from Kobo and attached to the email (max 40 MB total)</span></label>
+          <div id="email-attachments-list" style="display:flex;flex-direction:column;gap:.1rem"></div>
+        </div>
         <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
           <button type="button" class="select-btn" onclick="closeEmailModal(false)">Cancel</button>
           <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveEmailModal()">Save email settings</button>
@@ -833,6 +837,23 @@ ui.get("/:uid", (c) => {
       document.getElementById('email-body-section').style.display = hasAi ? 'none' : '';
       document.getElementById('email-ai-instructions').value = (cfg.aiBody && cfg.aiBody.instructions) || EMAIL_AI_DEFAULT_INSTRUCTIONS;
       document.getElementById('email-body').value = cfg.body || 'A new submission was received.\\n\\nUUID: {{_uuid}}\\nTime: {{_submission_time}}';
+      // Populate attachment checkboxes for media questions
+      var MEDIA_TYPES = new Set(['image', 'audio', 'video', 'file']);
+      var mediaQs = allQuestions.filter(function(q) { return MEDIA_TYPES.has(q.type); });
+      var attSection = document.getElementById('email-attachments-section');
+      if (mediaQs.length === 0) {
+        attSection.style.display = 'none';
+      } else {
+        attSection.style.display = '';
+        var savedAtts = cfg.attachments || [];
+        document.getElementById('email-attachments-list').innerHTML = mediaQs.map(function(q) {
+          var chk = savedAtts.indexOf(q.xpath) !== -1 ? ' checked' : '';
+          var badgeClass = q.type === 'audio' ? 'q-badge--audio' : q.type === 'image' || q.type === 'photo' ? 'q-badge--image' : 'q-badge--text';
+          var badgeLabel = q.type === 'audio' ? 'AUDIO' : q.type === 'image' || q.type === 'photo' ? 'IMAGE' : q.type.toUpperCase();
+          var badge = '<span class="q-badge ' + badgeClass + '">' + badgeLabel + '</span>';
+          return '<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem"><label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" name="email-attachment" value="' + escHtml(q.xpath) + '"' + chk + ' autocomplete="off" /><span style="font-size:.83rem;color:#374151">' + escHtml(q.label || q.xpath) + '</span></label>' + badge + '</div>';
+        }).join('');
+      }
       document.getElementById('email-modal').classList.add('open');
     }
 
@@ -867,6 +888,8 @@ ui.get("/:uid", (c) => {
       } else {
         emailNotificationConfig.body = body;
       }
+      var attChecked = Array.from(document.querySelectorAll('#email-attachments-list input[name="email-attachment"]:checked')).map(function(cb) { return cb.value; });
+      if (attChecked.length) emailNotificationConfig.attachments = attChecked;
       document.getElementById('email-modal').classList.remove('open');
       document.getElementById('email-notification-enabled').checked = true;
       document.getElementById('email-configure-btn').style.display = '';

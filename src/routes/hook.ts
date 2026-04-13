@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env, LogEntry } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
+import { isAllowedMediaHost } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
 import { resolveSubmissionId, editSubmission, resolveKoboEditToken, updateValidationStatus } from "../lib/koboEdit.js";
 import { geocodeSubmission } from "../lib/geocode.js";
@@ -9,6 +10,15 @@ import { callValidationAI } from "../lib/validateSubmission.js";
 const hook = new Hono<{ Bindings: Env }>();
 
 const MAX_BODY_BYTES = 1_048_576; // 1 MB
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 
 async function generateEmailBody(
   apiKey: string,
@@ -53,7 +63,8 @@ async function sendResendEmail(
   apiKey: string,
   from: string,
   cfg: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } },
-  htmlBody: string
+  htmlBody: string,
+  attachments?: Array<{ filename: string; content: string }>
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     from,
@@ -63,6 +74,7 @@ async function sendResendEmail(
   };
   if (cfg.cc?.length) payload.cc = cfg.cc;
   if (cfg.bcc?.length) payload.bcc = cfg.bcc;
+  if (attachments?.length) payload.attachments = attachments;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -133,7 +145,7 @@ hook.post("/:formUID", async (c) => {
       geocode?: boolean;
       geocodeField?: string;
       server?: string;
-      emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } };
+      emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[] };
       validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
     };
     if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
@@ -360,11 +372,46 @@ hook.post("/:formUID", async (c) => {
                        .replace(/\n/g, "<br>")
                 + "</div>";
             }
+
+            // Build attachment list by fetching configured media from Kobo
+            const emailAttachments: Array<{ filename: string; content: string }> = [];
+            if (emailNotification.attachments?.length && submission._attachments?.length) {
+              const koboServer = server ?? c.env.DEFAULT_KOBO_BASE_URL;
+              const attToken = resolveKoboEditToken(koboServer, {
+                global: c.env.KOBO_API_TOKEN_GLOBAL,
+                eu: c.env.KOBO_API_TOKEN_EU,
+              });
+              for (const xpath of emailNotification.attachments) {
+                const att = submission._attachments.find(
+                  (a) => !a.is_deleted && a.question_xpath === xpath
+                );
+                if (!att) continue;
+                if (!isAllowedMediaHost(att.download_url, koboServer)) continue;
+                try {
+                  const mediaRes = await fetch(att.download_url, {
+                    headers: { Authorization: `Token ${attToken}` },
+                  });
+                  if (!mediaRes.ok) {
+                    console.error(`[email] Failed to fetch attachment ${att.media_file_basename}: ${mediaRes.status}`);
+                    continue;
+                  }
+                  const buf = await mediaRes.arrayBuffer();
+                  emailAttachments.push({
+                    filename: att.media_file_basename,
+                    content: arrayBufferToBase64(buf),
+                  });
+                } catch (e) {
+                  console.error(`[email] Error fetching attachment ${att.media_file_basename}: ${e}`);
+                }
+              }
+            }
+
             await sendResendEmail(
               c.env.RESEND_API_KEY,
               c.env.RESEND_FROM_EMAIL,
               { ...emailNotification, subject },
-              htmlBody
+              htmlBody,
+              emailAttachments.length ? emailAttachments : undefined
             );
           }
 
