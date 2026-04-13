@@ -6,6 +6,7 @@ import { forwardSubmission } from "../lib/forward.js";
 import { resolveSubmissionId, editSubmission, resolveKoboEditToken, updateValidationStatus } from "../lib/koboEdit.js";
 import { geocodeSubmission } from "../lib/geocode.js";
 import { callValidationAI } from "../lib/validateSubmission.js";
+import { renderPdf } from "../lib/pdfReport.js";
 
 const hook = new Hono<{ Bindings: Env }>();
 
@@ -145,7 +146,7 @@ hook.post("/:formUID", async (c) => {
       geocode?: boolean;
       geocodeField?: string;
       server?: string;
-      emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[] };
+      emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
       validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
     };
     if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
@@ -341,6 +342,7 @@ hook.post("/:formUID", async (c) => {
             ...(validateOk !== undefined ? { validateOk } : {}),
             ...(validateHttpStatus !== undefined ? { validateHttpStatus } : {}),
             ...(validateError !== undefined ? { validateError } : {}),
+
           };
           await stub.fetch("https://do/log", {
             method: "POST",
@@ -348,7 +350,7 @@ hook.post("/:formUID", async (c) => {
             body: JSON.stringify(logEntry),
           });
 
-          // ── Step 3: Send email notification ──────────────────────────────
+          // ── Step 6: Send email notification ──────────────────────────────
           if (emailNotification && c.env.RESEND_API_KEY && c.env.RESEND_FROM_EMAIL) {
             // Merge enrichment (transcripts, AI descriptions) into the payload sent to the LLM
             const emailPayload: Record<string, unknown> = {
@@ -406,6 +408,30 @@ hook.post("/:formUID", async (c) => {
               }
             }
 
+            // Render and attach PDF report if configured
+            if (emailNotification.pdfReport) {
+              const enrichedForPdf: Record<string, unknown> = {
+                ...(submission as Record<string, unknown>),
+                ...(fwdResult?.enrichment ?? {}),
+                ...geoFields,
+              };
+              const pdfServer = server ?? c.env.DEFAULT_KOBO_BASE_URL;
+              const pdfToken = resolveKoboEditToken(pdfServer, {
+                global: c.env.KOBO_API_TOKEN_GLOBAL,
+                eu: c.env.KOBO_API_TOKEN_EU,
+              });
+              const pdfResult = await renderPdf(emailNotification.pdfReport, enrichedForPdf, pdfServer, pdfToken);
+              if (pdfResult.ok && pdfResult.pdfBytes) {
+                const uuid = String((submission as Record<string, unknown>)._uuid ?? "submission");
+                emailAttachments.push({
+                  filename: `submission-${uuid}.pdf`,
+                  content: arrayBufferToBase64(pdfResult.pdfBytes),
+                });
+              } else {
+                console.error(`[pdf] ${pdfResult.error}`);
+              }
+            }
+
             await sendResendEmail(
               c.env.RESEND_API_KEY,
               c.env.RESEND_FROM_EMAIL,
@@ -415,7 +441,7 @@ hook.post("/:formUID", async (c) => {
             );
           }
 
-          // ── Step 4: Write geocoded P-codes back to the original Kobo submission ──
+          // ── Step 7: Write geocoded P-codes back to the original Kobo submission ──
           if (Object.keys(geoFields).length > 0 && submission._uuid) {
             const geoServer = server ?? c.env.DEFAULT_KOBO_BASE_URL;
             const koboToken = resolveKoboEditToken(geoServer, {

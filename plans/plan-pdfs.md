@@ -13,7 +13,7 @@ accommodate it from the start.
 
 ---
 
-## New Service: `typst-doc-service`
+## New Service: `kobo2pdf`
 
 A small, stateless Python/FastAPI app that:
 1. Accepts a JSON body describing what to render
@@ -125,7 +125,7 @@ regardless of the exact field set (dynamic rendering), with special handling for
 ### Repository structure
 
 ```
-typst-doc-service/
+kobo2pdf/
   Dockerfile
   requirements.txt
   app/
@@ -458,8 +458,8 @@ Add a "PDF Report" section to the form configure UI (same pattern as existing se
 
 ```yaml
 services:
-  typst-doc-service:
-    build: ./typst-doc-service
+  kobo2pdf:
+    build: ./kobo2pdf
     restart: unless-stopped
     ports:
       - "127.0.0.1:3100:3000"   # bind localhost only; reverse-proxy via nginx if needed
@@ -547,7 +547,7 @@ Compared to `/render`, this endpoint needs to:
 
 ## Files to Create/Change
 
-### New repository: `typst-doc-service/`
+### New repository: `kobo2pdf/`
 
 | File | Purpose |
 |---|---|

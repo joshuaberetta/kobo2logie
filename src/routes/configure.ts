@@ -206,7 +206,7 @@ configure.get("/project/:uid", async (c) => {
         editOriginal?: boolean;
         geocode?: boolean;
         geocodeField?: string;
-        emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[] };
+        emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
         validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
       })
     : {};
@@ -246,7 +246,7 @@ configure.post("/project/:uid", async (c) => {
     editOriginal?: boolean;
     geocode?: boolean;
     geocodeField?: string;
-    emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[] } | null;
+    emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | null;
     validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } } | null;
   }>();
 
@@ -411,9 +411,9 @@ configure.post("/project/:uid", async (c) => {
       .filter((e) => e.key.length > 0);
   }
 
-  let safeEmailNotification: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[] } | undefined;
+  let safeEmailNotification: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | undefined;
   if (emailNotification != null) {
-    const { to, cc, bcc, subject, body, aiBody, attachments } = emailNotification;
+    const { to, cc, bcc, subject, body, aiBody, attachments, pdfReport: emailPdfReport } = emailNotification;
     if (!Array.isArray(to) || to.length === 0) {
       return c.json({ error: "emailNotification.to must be a non-empty array" }, 400);
     }
@@ -443,6 +443,12 @@ configure.post("/project/:uid", async (c) => {
       ...(safeAiBody ? { aiBody: safeAiBody } : { body: String(body ?? "").trim() }),
       ...(safeAttachments?.length ? { attachments: safeAttachments } : {}),
     };
+    if (emailPdfReport != null) {
+      safeEmailNotification.pdfReport = {
+        ...(emailPdfReport.template ? { template: String(emailPdfReport.template).trim() } : {}),
+        ...(emailPdfReport.formTitle ? { formTitle: String(emailPdfReport.formTitle).trim() } : {}),
+      };
+    }
   }
 
   // Sanitise validateSubmission config if provided

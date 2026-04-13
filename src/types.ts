@@ -12,6 +12,8 @@ export interface LogEntry {
   validateOk?: boolean;        // true = validation status set, false = failed, absent = not attempted
   validateHttpStatus?: number; // HTTP status from the Kobo validation_status endpoint
   validateError?: string;      // error message if validation failed
+  pdfOk?: boolean;             // true = PDF generated and emailed, false = failed, absent = not attempted
+  pdfError?: string;           // error message if PDF step failed
 }
 
 export interface Env {

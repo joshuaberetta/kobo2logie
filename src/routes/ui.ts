@@ -528,6 +528,21 @@ ui.get("/:uid", (c) => {
           <label style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Attach media files<span class="label-hint">fetched from Kobo and attached to the email (max 40 MB total)</span></label>
           <div id="email-attachments-list" style="display:flex;flex-direction:column;gap:.1rem"></div>
         </div>
+        <div id="email-attach-pdf-section">
+          <label class="checkbox-row" style="margin-bottom:.4rem"><input type="checkbox" id="email-pdf-enabled" autocomplete="off" /><span style="font-size:.83rem;color:#374151;font-weight:600">Generate PDF report &amp; attach</span></label>
+          <div id="email-pdf-fields" style="display:none">
+            <div style="margin-top:.5rem;padding-left:1.4rem;border-left:2px solid #e5e7eb;display:flex;flex-direction:column;gap:.7rem">
+              <div>
+                <label for="email-pdf-form-title" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Form title<span class="label-hint">shown in PDF header, optional</span></label>
+                <input id="email-pdf-form-title" type="text" placeholder="Household Assessment" autocomplete="off" spellcheck="false" />
+              </div>
+              <div>
+                <label for="email-pdf-template" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Template<span class="label-hint">defaults to &ldquo;submission&rdquo;</span></label>
+                <input id="email-pdf-template" type="text" placeholder="submission" autocomplete="off" spellcheck="false" />
+              </div>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
           <button type="button" class="select-btn" onclick="closeEmailModal(false)">Cancel</button>
           <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveEmailModal()">Save email settings</button>
@@ -824,6 +839,10 @@ ui.get("/:uid", (c) => {
       document.getElementById('email-body-section').style.display = useAi ? 'none' : '';
     });
 
+    document.getElementById('email-pdf-enabled').addEventListener('change', function() {
+      document.getElementById('email-pdf-fields').style.display = this.checked ? '' : 'none';
+    });
+
     function openEmailModal() {
       var cfg = emailNotificationConfig || {};
       document.getElementById('email-to').value = (cfg.to || []).join(', ');
@@ -854,6 +873,11 @@ ui.get("/:uid", (c) => {
           return '<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem"><label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" name="email-attachment" value="' + escHtml(q.xpath) + '"' + chk + ' autocomplete="off" /><span style="font-size:.83rem;color:#374151">' + escHtml(q.label || q.xpath) + '</span></label>' + badge + '</div>';
         }).join('');
       }
+      var pdfEnabled = !!(cfg.pdfReport);
+      document.getElementById('email-pdf-enabled').checked = pdfEnabled;
+      document.getElementById('email-pdf-fields').style.display = pdfEnabled ? '' : 'none';
+      document.getElementById('email-pdf-form-title').value = (cfg.pdfReport && cfg.pdfReport.formTitle) || '';
+      document.getElementById('email-pdf-template').value = (cfg.pdfReport && cfg.pdfReport.template) || '';
       document.getElementById('email-modal').classList.add('open');
     }
 
@@ -890,12 +914,21 @@ ui.get("/:uid", (c) => {
       }
       var attChecked = Array.from(document.querySelectorAll('#email-attachments-list input[name="email-attachment"]:checked')).map(function(cb) { return cb.value; });
       if (attChecked.length) emailNotificationConfig.attachments = attChecked;
+      if (document.getElementById('email-pdf-enabled').checked) {
+        var pdfConfig = {};
+        var pdfFormTitle = document.getElementById('email-pdf-form-title').value.trim();
+        var pdfTemplate = document.getElementById('email-pdf-template').value.trim();
+        if (pdfFormTitle) pdfConfig.formTitle = pdfFormTitle;
+        if (pdfTemplate) pdfConfig.template = pdfTemplate;
+        emailNotificationConfig.pdfReport = pdfConfig;
+      }
       document.getElementById('email-modal').classList.remove('open');
       document.getElementById('email-notification-enabled').checked = true;
       document.getElementById('email-configure-btn').style.display = '';
       markDirty();
     }
 
+    // ── PDF report modal ──────────────────────────────────────────────────────
     function selectAllFields() {
       document.querySelectorAll('#fields-list input[name="field"]').forEach(cb => { cb.checked = true; });
       updateFieldsCount();
