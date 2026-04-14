@@ -497,16 +497,40 @@ ui.get("/:uid", (c) => {
       </div>
       <div class="modal-body" style="gap:.9rem">
         <div>
-          <label for="email-to" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">To <span style="color:#dc2626">*</span><span class="label-hint">comma-separated</span></label>
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:.4rem;">
+            <label style="font-size:.82rem;font-weight:600;color:#444;margin:0">To <span style="color:#dc2626">*</span></label>
+            <div style="display:flex; gap:.75rem; font-size:.72rem;">
+              <label style="display:flex; align-items:center; gap:.25rem; margin:0; cursor:pointer"><input type="radio" name="email-to-mode" value="static" checked> Static emails</label>
+              <label style="display:flex; align-items:center; gap:.25rem; margin:0; cursor:pointer"><input type="radio" name="email-to-mode" value="xpath"> Form fields (XPath)</label>
+            </div>
+          </div>
           <input id="email-to" type="text" placeholder="recipient@example.com, another@example.com" autocomplete="off" spellcheck="false" />
+          <input id="email-to-xpaths" type="text" placeholder="respondent/email, contact.email" autocomplete="off" spellcheck="false" style="display:none;" />
+          <div id="email-to-hint" style="font-size:.75rem;font-weight:400;color:#9ca3af;margin-top:.25rem">comma-separated static emails</div>
         </div>
         <div>
-          <label for="email-cc" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">CC<span class="label-hint">comma-separated, optional</span></label>
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:.4rem;">
+            <label style="font-size:.82rem;font-weight:600;color:#444;margin:0">CC</label>
+            <div style="display:flex; gap:.75rem; font-size:.72rem;">
+              <label style="display:flex; align-items:center; gap:.25rem; margin:0; cursor:pointer"><input type="radio" name="email-cc-mode" value="static" checked> Static emails</label>
+              <label style="display:flex; align-items:center; gap:.25rem; margin:0; cursor:pointer"><input type="radio" name="email-cc-mode" value="xpath"> Form fields (XPath)</label>
+            </div>
+          </div>
           <input id="email-cc" type="text" placeholder="cc@example.com" autocomplete="off" spellcheck="false" />
+          <input id="email-cc-xpaths" type="text" placeholder="managers/reviewer_email" autocomplete="off" spellcheck="false" style="display:none;" />
+          <div id="email-cc-hint" style="font-size:.75rem;font-weight:400;color:#9ca3af;margin-top:.25rem">comma-separated static emails, optional</div>
         </div>
         <div>
-          <label for="email-bcc" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">BCC<span class="label-hint">comma-separated, optional</span></label>
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:.4rem;">
+            <label style="font-size:.82rem;font-weight:600;color:#444;margin:0">BCC</label>
+            <div style="display:flex; gap:.75rem; font-size:.72rem;">
+              <label style="display:flex; align-items:center; gap:.25rem; margin:0; cursor:pointer"><input type="radio" name="email-bcc-mode" value="static" checked> Static emails</label>
+              <label style="display:flex; align-items:center; gap:.25rem; margin:0; cursor:pointer"><input type="radio" name="email-bcc-mode" value="xpath"> Form fields (XPath)</label>
+            </div>
+          </div>
           <input id="email-bcc" type="text" placeholder="bcc@example.com" autocomplete="off" spellcheck="false" />
+          <input id="email-bcc-xpaths" type="text" placeholder="approver/email" autocomplete="off" spellcheck="false" style="display:none;" />
+          <div id="email-bcc-hint" style="font-size:.75rem;font-weight:400;color:#9ca3af;margin-top:.25rem">comma-separated static emails, optional</div>
         </div>
         <div>
           <label for="email-subject" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Subject <span style="color:#dc2626">*</span><span class="label-hint">use {{field_name}} for submission values</span></label>
@@ -843,11 +867,37 @@ ui.get("/:uid", (c) => {
       document.getElementById('email-pdf-fields').style.display = this.checked ? '' : 'none';
     });
 
+    function setRecipientMode(prefix, mode) {
+      if (mode === 'xpath') {
+        document.getElementById(prefix).style.display = 'none';
+        document.getElementById(prefix).value = '';
+        document.getElementById(prefix + '-xpaths').style.display = '';
+        document.getElementById(prefix + '-hint').textContent = 'comma-separated fields in submission JSON';
+      } else {
+        document.getElementById(prefix).style.display = '';
+        document.getElementById(prefix + '-xpaths').style.display = 'none';
+        document.getElementById(prefix + '-xpaths').value = '';
+        var isOptional = prefix !== 'email-to';
+        document.getElementById(prefix + '-hint').textContent = 'comma-separated static emails' + (isOptional ? ', optional' : '');
+      }
+    }
+
+    ['email-to', 'email-cc', 'email-bcc'].forEach(function(prefix) {
+      document.querySelectorAll('input[name="' + prefix + '-mode"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+          if (this.checked) setRecipientMode(prefix, this.value);
+        });
+      });
+    });
+
     function openEmailModal() {
       var cfg = emailNotificationConfig || {};
       document.getElementById('email-to').value = (cfg.to || []).join(', ');
+      document.getElementById('email-to-xpaths').value = (cfg.toXPaths || []).join(', ');
       document.getElementById('email-cc').value = (cfg.cc || []).join(', ');
+      document.getElementById('email-cc-xpaths').value = (cfg.ccXPaths || []).join(', ');
       document.getElementById('email-bcc').value = (cfg.bcc || []).join(', ');
+      document.getElementById('email-bcc-xpaths').value = (cfg.bccXPaths || []).join(', ');
       document.getElementById('email-subject').value = cfg.subject || 'New Kobo submission: {{_uuid}}';
       var hasAi = !!(cfg.aiBody);
       var aiCb = document.getElementById('email-ai-enabled');
@@ -878,6 +928,12 @@ ui.get("/:uid", (c) => {
       document.getElementById('email-pdf-fields').style.display = pdfEnabled ? '' : 'none';
       document.getElementById('email-pdf-form-title').value = (cfg.pdfReport && cfg.pdfReport.formTitle) || '';
       document.getElementById('email-pdf-template').value = (cfg.pdfReport && cfg.pdfReport.template) || '';
+      ['email-to', 'email-cc', 'email-bcc'].forEach(function(prefix) {
+        var hasXpath = document.getElementById(prefix + '-xpaths').value.trim().length > 0;
+        var mode = hasXpath ? 'xpath' : 'static';
+        document.querySelector('input[name="' + prefix + '-mode"][value="' + mode + '"]').checked = true;
+        setRecipientMode(prefix, mode);
+      });
       document.getElementById('email-modal').classList.add('open');
     }
 
@@ -890,22 +946,32 @@ ui.get("/:uid", (c) => {
 
     function saveEmailModal() {
       var toRaw = document.getElementById('email-to').value.trim();
+      var toXpathsRaw = document.getElementById('email-to-xpaths').value.trim();
       var ccRaw = document.getElementById('email-cc').value.trim();
+      var ccXpathsRaw = document.getElementById('email-cc-xpaths').value.trim();
       var bccRaw = document.getElementById('email-bcc').value.trim();
+      var bccXpathsRaw = document.getElementById('email-bcc-xpaths').value.trim();
       var subject = document.getElementById('email-subject').value.trim();
       var useAi = document.getElementById('email-ai-enabled').checked;
       var aiInstructions = document.getElementById('email-ai-instructions').value.trim();
       var body = document.getElementById('email-body').value.trim();
-      if (!toRaw || !subject) {
-        alert('To and Subject are required.');
+      var parseCsv = function(s) { return s.split(',').map(function(e) { return e.trim(); }).filter(Boolean); };
+      var to = parseCsv(toRaw);
+      var toXPaths = parseCsv(toXpathsRaw);
+      var cc = parseCsv(ccRaw);
+      var ccXPaths = parseCsv(ccXpathsRaw);
+      var bcc = parseCsv(bccRaw);
+      var bccXPaths = parseCsv(bccXpathsRaw);
+      if ((!to.length && !toXPaths.length) || !subject) {
+        alert('Subject is required, and To must include at least one email or one XPath.');
         return;
       }
-      var parseEmails = function(s) { return s.split(',').map(function(e) { return e.trim(); }).filter(Boolean); };
-      emailNotificationConfig = { to: parseEmails(toRaw) };
-      var cc = parseEmails(ccRaw);
-      var bcc = parseEmails(bccRaw);
+      emailNotificationConfig = { to: to };
+      if (toXPaths.length) emailNotificationConfig.toXPaths = toXPaths;
       if (cc.length) emailNotificationConfig.cc = cc;
+      if (ccXPaths.length) emailNotificationConfig.ccXPaths = ccXPaths;
       if (bcc.length) emailNotificationConfig.bcc = bcc;
+      if (bccXPaths.length) emailNotificationConfig.bccXPaths = bccXPaths;
       emailNotificationConfig.subject = subject;
       if (useAi) {
         emailNotificationConfig.aiBody = { instructions: aiInstructions };

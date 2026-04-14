@@ -21,6 +21,98 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function getPayloadValue(payload: Record<string, unknown>, key: string): unknown {
+  const trimmed = key.trim();
+  if (!trimmed) return undefined;
+
+  if (Object.prototype.hasOwnProperty.call(payload, trimmed)) {
+    return payload[trimmed];
+  }
+
+  const readNested = (segments: string[]): unknown => {
+    let current: unknown = payload;
+    for (const seg of segments) {
+      if (!seg) continue;
+      if (typeof current !== "object" || current === null || Array.isArray(current)) {
+        return undefined;
+      }
+      if (!Object.prototype.hasOwnProperty.call(current, seg)) {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[seg];
+    }
+    return current;
+  };
+
+  if (trimmed.includes("/")) {
+    const value = readNested(trimmed.split("/"));
+    if (value !== undefined) return value;
+  }
+  if (trimmed.includes(".")) {
+    const value = readNested(trimmed.split("."));
+    if (value !== undefined) return value;
+  }
+
+  return undefined;
+}
+
+function extractEmailAddresses(value: unknown): string[] {
+  if (value == null) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractEmailAddresses(item));
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const matches = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
+  return matches ? matches.map((m) => m.trim()).filter(Boolean) : [];
+}
+
+function resolveEmailRecipients(
+  cfg: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[] },
+  payload: Record<string, unknown>
+): { to: string[]; cc?: string[]; bcc?: string[] } {
+  const pushUnique = (target: string[], seen: Set<string>, value: string) => {
+    const email = value.trim();
+    if (!email) return;
+    const key = email.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    target.push(email);
+  };
+
+  const collect = (staticEmails?: string[], xpaths?: string[]) => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+
+    for (const email of staticEmails ?? []) {
+      pushUnique(out, seen, email);
+    }
+
+    for (const xpath of xpaths ?? []) {
+      const extracted = extractEmailAddresses(getPayloadValue(payload, xpath));
+      for (const email of extracted) {
+        pushUnique(out, seen, email);
+      }
+    }
+
+    return out;
+  };
+
+  const to = collect(cfg.to, cfg.toXPaths);
+  const cc = collect(cfg.cc, cfg.ccXPaths);
+  const bcc = collect(cfg.bcc, cfg.bccXPaths);
+
+  return {
+    to,
+    ...(cc.length ? { cc } : {}),
+    ...(bcc.length ? { bcc } : {}),
+  };
+}
+
 async function generateEmailBody(
   apiKey: string,
   instructions: string,
@@ -137,16 +229,16 @@ hook.post("/:formUID", async (c) => {
       forwardToken?: string;
       fields?: string[];
       transcribe?: { questions: string[]; model?: string; prompt?: string };
-      extract?: { questions: string[]; model?: string; prompts?: Record<string, string> };
-      analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, string> };
-      extractText?: { questions: string[]; model?: string; prompts?: Record<string, string> };
+      extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
+      analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
+      extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
       editOriginal?: boolean;
       geocode?: boolean;
       geocodeField?: string;
       server?: string;
-      emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
+      emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
       validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
     };
     if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
@@ -358,7 +450,11 @@ hook.post("/:formUID", async (c) => {
               ...(fwdResult?.enrichment ?? {}),
             };
             const fill = (s: string) =>
-              s.replace(/\{\{([\w.]+)\}\}/g, (_, k) => String((emailPayload as Record<string, unknown>)[k] ?? ""));
+              s.replace(/\{\{([^{}]+)\}\}/g, (_, k) => {
+                const value = getPayloadValue(emailPayload, String(k));
+                if (value == null) return "";
+                return typeof value === "string" ? value : JSON.stringify(value);
+              });
             const subject = fill(emailNotification.subject);
             let htmlBody: string;
             if (emailNotification.aiBody && c.env.OPENAI_API_KEY) {
@@ -432,10 +528,16 @@ hook.post("/:formUID", async (c) => {
               }
             }
 
+            const recipients = resolveEmailRecipients(emailNotification, emailPayload);
+            if (recipients.to.length === 0) {
+              console.error("[email] Skipped send: no valid To recipients resolved from static emails or XPaths");
+              return;
+            }
+
             await sendResendEmail(
               c.env.RESEND_API_KEY,
               c.env.RESEND_FROM_EMAIL,
-              { ...emailNotification, subject },
+              { ...recipients, subject },
               htmlBody,
               emailAttachments.length ? emailAttachments : undefined
             );

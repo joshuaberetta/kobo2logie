@@ -206,7 +206,7 @@ configure.get("/project/:uid", async (c) => {
         editOriginal?: boolean;
         geocode?: boolean;
         geocodeField?: string;
-        emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
+        emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
         validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
       })
     : {};
@@ -246,7 +246,7 @@ configure.post("/project/:uid", async (c) => {
     editOriginal?: boolean;
     geocode?: boolean;
     geocodeField?: string;
-    emailNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | null;
+    emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | null;
     validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } } | null;
   }>();
 
@@ -411,22 +411,31 @@ configure.post("/project/:uid", async (c) => {
       .filter((e) => e.key.length > 0);
   }
 
-  let safeEmailNotification: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | undefined;
+  let safeEmailNotification: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | undefined;
   if (emailNotification != null) {
-    const { to, cc, bcc, subject, body, aiBody, attachments, pdfReport: emailPdfReport } = emailNotification;
-    if (!Array.isArray(to) || to.length === 0) {
-      return c.json({ error: "emailNotification.to must be a non-empty array" }, 400);
-    }
-    const safeTo = (to as unknown[]).map((e) => String(e).trim()).filter(Boolean);
-    if (safeTo.length === 0) {
-      return c.json({ error: "emailNotification.to must contain at least one email" }, 400);
+    const { to, toXPaths, cc, ccXPaths, bcc, bccXPaths, subject, body, aiBody, attachments, pdfReport: emailPdfReport } = emailNotification;
+    const safeTo = Array.isArray(to) ? (to as unknown[]).map((e) => String(e).trim()).filter(Boolean) : [];
+    const safeToXPaths = Array.isArray(toXPaths) ? (toXPaths as unknown[]).map((x) => String(x).trim()).filter(Boolean) : [];
+    if (safeTo.length === 0 && safeToXPaths.length === 0) {
+      return c.json({ error: "emailNotification requires at least one To email or To XPath" }, 400);
     }
     const safeSubject = String(subject ?? "").trim();
     if (!safeSubject) {
       return c.json({ error: "emailNotification.subject is required" }, 400);
     }
     const safeCc = Array.isArray(cc) ? (cc as unknown[]).map((e) => String(e).trim()).filter(Boolean) : undefined;
+    const safeCcXPaths = Array.isArray(ccXPaths) ? (ccXPaths as unknown[]).map((x) => String(x).trim()).filter(Boolean) : undefined;
     const safeBcc = Array.isArray(bcc) ? (bcc as unknown[]).map((e) => String(e).trim()).filter(Boolean) : undefined;
+    const safeBccXPaths = Array.isArray(bccXPaths) ? (bccXPaths as unknown[]).map((x) => String(x).trim()).filter(Boolean) : undefined;
+    if (safeTo.length > 0 && safeToXPaths.length > 0) {
+      return c.json({ error: "emailNotification.to cannot include both static emails and XPaths" }, 400);
+    }
+    if ((safeCc?.length ?? 0) > 0 && (safeCcXPaths?.length ?? 0) > 0) {
+      return c.json({ error: "emailNotification.cc cannot include both static emails and XPaths" }, 400);
+    }
+    if ((safeBcc?.length ?? 0) > 0 && (safeBccXPaths?.length ?? 0) > 0) {
+      return c.json({ error: "emailNotification.bcc cannot include both static emails and XPaths" }, 400);
+    }
     let safeAiBody: { instructions: string } | undefined;
     if (aiBody != null && typeof aiBody === "object") {
       const instructions = String((aiBody as Record<string, unknown>).instructions ?? "").trim();
@@ -437,8 +446,11 @@ configure.post("/project/:uid", async (c) => {
       : undefined;
     safeEmailNotification = {
       to: safeTo,
+      ...(safeToXPaths.length ? { toXPaths: safeToXPaths } : {}),
       ...(safeCc?.length ? { cc: safeCc } : {}),
+      ...(safeCcXPaths?.length ? { ccXPaths: safeCcXPaths } : {}),
       ...(safeBcc?.length ? { bcc: safeBcc } : {}),
+      ...(safeBccXPaths?.length ? { bccXPaths: safeBccXPaths } : {}),
       subject: safeSubject,
       ...(safeAiBody ? { aiBody: safeAiBody } : { body: String(body ?? "").trim() }),
       ...(safeAttachments?.length ? { attachments: safeAttachments } : {}),

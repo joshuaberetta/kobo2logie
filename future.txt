@@ -29,3 +29,5 @@ Named entity extraction from free-text fields — run GPT on text answer fields 
 Submission validation + Kobo flag — evaluate rules against the submission and use the Kobo validation status API to automatically flag a submission as "Not approved" with a reason if it fails.
 
 The three I'd prioritise: conditional forwarding (practical, saves AI costs), reverse geocoding (zero cost, high field value), and response field injection (closes the loop with downstream systems).
+
+send email to email value from within form
