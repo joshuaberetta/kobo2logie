@@ -1,3 +1,38 @@
+// ── Condition logic types ─────────────────────────────────────────────────────
+
+export type Operator =
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "not_contains"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "greater_than"
+  | "less_than"
+  | "greater_than_or_equal"
+  | "less_than_or_equal";
+
+export interface ConditionRule {
+  type: "rule";
+  field: string;
+  operator: Operator;
+  value?: string;
+}
+
+export type Combinator = "and" | "or";
+
+export interface ConditionGroup {
+  type: "group";
+  combinator: Combinator;
+  rules: Array<ConditionRule | ConditionGroup>;
+}
+
+export type Condition = ConditionGroup;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface LogEntry {
   ts: number;          // Unix ms timestamp
   uuid?: string;       // submission _uuid

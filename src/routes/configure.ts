@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env } from "../types.js";
+import type { Env, Condition, ConditionGroup } from "../types.js";
 
 const configure = new Hono<{ Bindings: Env }>();
 
@@ -8,6 +8,15 @@ const ALLOWED_SERVERS = new Set([
   "https://kf.kobotoolbox.org",
   "https://eu.kobotoolbox.org",
 ]);
+
+// Lightweight structural check — enough to guard against arbitrary objects being stored
+function isValidCondition(c: unknown): c is Condition {
+  if (!c || typeof c !== "object" || Array.isArray(c)) return false;
+  const g = c as Record<string, unknown>;
+  return g.type === "group"
+    && (g.combinator === "and" || g.combinator === "or")
+    && Array.isArray(g.rules);
+}
 
 // ── POST /api/configure/rest-service ─────────────────────────────────────────
 
@@ -206,8 +215,10 @@ configure.get("/project/:uid", async (c) => {
         editOriginal?: boolean;
         geocode?: boolean;
         geocodeField?: string;
-        emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
-        validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
+        emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string }; condition?: Condition };
+        validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition };
+        forwardCondition?: Condition;
+        geocodeCondition?: Condition;
       })
     : {};
   return c.json({
@@ -226,6 +237,8 @@ configure.get("/project/:uid", async (c) => {
     geocodeField: config.geocodeField ?? "",
     emailNotification: config.emailNotification ?? null,
     validateSubmission: config.validateSubmission ?? null,
+    forwardCondition: config.forwardCondition ?? null,
+    geocodeCondition: config.geocodeCondition ?? null,
   });
 });
 
@@ -233,7 +246,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification, validateSubmission } = await c.req.json<{
+  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     fields?: string[];
@@ -246,8 +259,10 @@ configure.post("/project/:uid", async (c) => {
     editOriginal?: boolean;
     geocode?: boolean;
     geocodeField?: string;
-    emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | null;
-    validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } } | null;
+    emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string }; condition?: Condition } | null;
+    validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition } | null;
+    forwardCondition?: Condition | null;
+    geocodeCondition?: Condition | null;
   }>();
 
   if (forwardUrl) {
@@ -413,7 +428,7 @@ configure.post("/project/:uid", async (c) => {
 
   let safeEmailNotification: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } } | undefined;
   if (emailNotification != null) {
-    const { to, toXPaths, cc, ccXPaths, bcc, bccXPaths, subject, body, aiBody, attachments, pdfReport: emailPdfReport } = emailNotification;
+    const { to, toXPaths, cc, ccXPaths, bcc, bccXPaths, subject, aiBody, attachments, pdfReport: emailPdfReport } = emailNotification;
     const safeTo = Array.isArray(to) ? (to as unknown[]).map((e) => String(e).trim()).filter(Boolean) : [];
     const safeToXPaths = Array.isArray(toXPaths) ? (toXPaths as unknown[]).map((x) => String(x).trim()).filter(Boolean) : [];
     if (safeTo.length === 0 && safeToXPaths.length === 0) {
@@ -444,6 +459,7 @@ configure.post("/project/:uid", async (c) => {
     const safeAttachments = Array.isArray(attachments)
       ? (attachments as unknown[]).map((x) => String(x).trim()).filter(Boolean)
       : undefined;
+    const safeEmailCondition: Condition | undefined = isValidCondition(emailNotification?.condition) ? emailNotification!.condition : undefined;
     safeEmailNotification = {
       to: safeTo,
       ...(safeToXPaths.length ? { toXPaths: safeToXPaths } : {}),
@@ -452,8 +468,9 @@ configure.post("/project/:uid", async (c) => {
       ...(safeBcc?.length ? { bcc: safeBcc } : {}),
       ...(safeBccXPaths?.length ? { bccXPaths: safeBccXPaths } : {}),
       subject: safeSubject,
-      ...(safeAiBody ? { aiBody: safeAiBody } : { body: String(body ?? "").trim() }),
+      ...(safeAiBody ? { aiBody: safeAiBody } : { body: String(emailNotification.body ?? "").trim() }),
       ...(safeAttachments?.length ? { attachments: safeAttachments } : {}),
+      ...(safeEmailCondition ? { condition: safeEmailCondition } : {}),
     };
     if (emailPdfReport != null) {
       safeEmailNotification.pdfReport = {
@@ -464,8 +481,9 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Sanitise validateSubmission config if provided
-  let safeValidateSubmission: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } } | undefined;
+  let safeValidateSubmission: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition } | undefined;
   if (validateSubmission != null) {
+    const safeValCondition: Condition | undefined = isValidCondition(validateSubmission.condition) ? validateSubmission.condition : undefined;
     safeValidateSubmission = {
       instructions: String(validateSubmission.instructions ?? "").trim(),
       includeReasoning: validateSubmission.includeReasoning !== false,
@@ -474,6 +492,7 @@ configure.post("/project/:uid", async (c) => {
         notApproved: String(validateSubmission.options?.notApproved ?? "").trim(),
         onHold:      String(validateSubmission.options?.onHold      ?? "").trim(),
       },
+      ...(safeValCondition ? { condition: safeValCondition } : {}),
     };
   }
 
@@ -550,6 +569,18 @@ configure.post("/project/:uid", async (c) => {
     } else {
       delete next.geocodeField;
     }
+    // forwardCondition: null = clear, undefined = don't touch, object = set
+    if (forwardCondition === null) {
+      delete next.forwardCondition;
+    } else if (isValidCondition(forwardCondition)) {
+      next.forwardCondition = forwardCondition;
+    }
+    // geocodeCondition: null = clear, undefined = don't touch, object = set
+    if (geocodeCondition === null) {
+      delete next.geocodeCondition;
+    } else if (isValidCondition(geocodeCondition)) {
+      next.geocodeCondition = geocodeCondition;
+    }
     await c.env.FORWARD_CONFIG.put(uid, JSON.stringify(next));
   }
 
@@ -598,6 +629,85 @@ configure.get("/survey/:uid", async (c) => {
     .map((q) => ({ xpath: q.$xpath, label: q.label?.[0] ?? q.$xpath, type: q.type }));
 
   return c.json({ questions });
+});
+
+// ── POST /api/configure/condition/generate ────────────────────────────────────
+
+configure.post("/condition/generate", async (c) => {
+  if (!c.env.OPENAI_API_KEY) {
+    return c.json({ error: "AI not configured" }, 501);
+  }
+
+  const { prompt, currentCondition } = await c.req.json<{
+    prompt: string;
+    currentCondition?: Condition;
+  }>();
+
+  if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+    return c.json({ error: "prompt is required" }, 400);
+  }
+
+  const systemPrompt = `You are a filter-rule builder. The user describes a filter condition in plain language.
+Return ONLY valid JSON matching this TypeScript type (no explanation, no markdown fences):
+
+type Operator = "equals" | "not_equals" | "contains" | "not_contains" | "starts_with"
+              | "ends_with" | "is_empty" | "is_not_empty" | "greater_than" | "less_than"
+              | "greater_than_or_equal" | "less_than_or_equal";
+interface ConditionRule { type: "rule"; field: string; operator: Operator; value?: string; }
+type Combinator = "and" | "or";
+interface ConditionGroup { type: "group"; combinator: Combinator; rules: Array<ConditionRule | ConditionGroup>; }
+
+Field names must be taken verbatim from the user's description (do not alter capitalisation or spacing).
+If the user's prompt is a refinement of an existing condition, incorporate that condition as a starting point.`;
+
+  const userMessage = currentCondition
+    ? `Current condition:\n${JSON.stringify(currentCondition, null, 2)}\n\nUser request: ${prompt.trim()}`
+    : prompt.trim();
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${c.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`[condition/generate] OpenAI error ${res.status}: ${text.slice(0, 200)}`);
+      return c.json({ error: "AI request failed" }, 502);
+    }
+
+    const data = await res.json<{ choices: Array<{ message: { content: string } }> }>();
+    const raw = data.choices?.[0]?.message?.content?.trim();
+    if (!raw) return c.json({ error: "AI returned no content" }, 502);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "AI returned invalid JSON" }, 502);
+    }
+
+    if (!isValidCondition(parsed)) {
+      return c.json({ error: "AI returned unexpected structure" }, 502);
+    }
+
+    return c.json({ condition: parsed as ConditionGroup });
+  } catch (e) {
+    console.error(`[condition/generate] Error: ${e}`);
+    return c.json({ error: "Internal error" }, 500);
+  }
 });
 
 export default configure;

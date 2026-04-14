@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, LogEntry } from "../types.js";
+import type { Env, LogEntry, Condition } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
 import { isAllowedMediaHost } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
@@ -7,6 +7,8 @@ import { resolveSubmissionId, editSubmission, resolveKoboEditToken, updateValida
 import { geocodeSubmission } from "../lib/geocode.js";
 import { callValidationAI } from "../lib/validateSubmission.js";
 import { renderPdf } from "../lib/pdfReport.js";
+import { getPayloadValue } from "../lib/submissionValue.js";
+import { evaluateCondition } from "../lib/evaluateCondition.js";
 
 const hook = new Hono<{ Bindings: Env }>();
 
@@ -19,41 +21,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
-}
-
-function getPayloadValue(payload: Record<string, unknown>, key: string): unknown {
-  const trimmed = key.trim();
-  if (!trimmed) return undefined;
-
-  if (Object.prototype.hasOwnProperty.call(payload, trimmed)) {
-    return payload[trimmed];
-  }
-
-  const readNested = (segments: string[]): unknown => {
-    let current: unknown = payload;
-    for (const seg of segments) {
-      if (!seg) continue;
-      if (typeof current !== "object" || current === null || Array.isArray(current)) {
-        return undefined;
-      }
-      if (!Object.prototype.hasOwnProperty.call(current, seg)) {
-        return undefined;
-      }
-      current = (current as Record<string, unknown>)[seg];
-    }
-    return current;
-  };
-
-  if (trimmed.includes("/")) {
-    const value = readNested(trimmed.split("/"));
-    if (value !== undefined) return value;
-  }
-  if (trimmed.includes(".")) {
-    const value = readNested(trimmed.split("."));
-    if (value !== undefined) return value;
-  }
-
-  return undefined;
 }
 
 function extractEmailAddresses(value: unknown): string[] {
@@ -224,7 +191,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification, validateSubmission } = JSON.parse(fwdConfig) as {
+    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       fields?: string[];
@@ -238,8 +205,10 @@ hook.post("/:formUID", async (c) => {
       geocode?: boolean;
       geocodeField?: string;
       server?: string;
-      emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string } };
-      validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string } };
+      emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string }; condition?: Condition };
+      validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition };
+      forwardCondition?: Condition;
+      geocodeCondition?: Condition;
     };
     if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
       const submission = body as KoboSubmission;
@@ -284,7 +253,7 @@ hook.post("/:formUID", async (c) => {
         (async () => {
           // ── Geocode coordinates → P-codes (runs first so result is included in forward payload) ──
           let geoFields: Record<string, string> = {};
-          if (geocode) {
+          if (geocode && evaluateCondition(geocodeCondition, submission as Record<string, unknown>)) {
             let geoLat = NaN, geoLon = NaN;
             if (geocodeField) {
               const raw = (submission as Record<string, unknown>)[geocodeField];
@@ -315,11 +284,16 @@ hook.post("/:formUID", async (c) => {
             : jsonPayload;
 
           // ── Step 1: Forward submission (and/or enrich) ───────────────────
+          // Enrichment (transcribe/extract/etc.) always runs; the forwardUrl HTTP POST
+          // is gated by forwardCondition. Pass skipPost=true when condition is not met.
           let fwdResult: Awaited<ReturnType<typeof forwardSubmission>> | undefined;
           if (forwardUrl || transcribe || extract || analyzeAudio || extractText) {
+            const skipForwardPost = forwardUrl
+              ? !evaluateCondition(forwardCondition, submission as Record<string, unknown>)
+              : false;
             fwdResult = await forwardSubmission(
               submission,
-              forwardUrl,
+              skipForwardPost ? undefined : forwardUrl,
               c.env.DEFAULT_KOBO_BASE_URL,
               {
                 global: c.env.KOBO_API_TOKEN_GLOBAL,
@@ -382,7 +356,7 @@ hook.post("/:formUID", async (c) => {
           let validateHttpStatus: number | undefined;
           let validateError: string | undefined;
 
-          if (validateSubmission && server && submission._uuid && openaiApiKey) {
+          if (validateSubmission && evaluateCondition(validateSubmission.condition, submission as Record<string, unknown>) && server && submission._uuid && openaiApiKey) {
             const valId = resolvedSubmissionId !== undefined
               ? resolvedSubmissionId
               : await resolveSubmissionId(server, formUID, submission._uuid, koboEditToken ?? resolveKoboEditToken(server, { global: c.env.KOBO_API_TOKEN_GLOBAL, eu: c.env.KOBO_API_TOKEN_EU }));
@@ -443,7 +417,7 @@ hook.post("/:formUID", async (c) => {
           });
 
           // ── Step 6: Send email notification ──────────────────────────────
-          if (emailNotification && c.env.RESEND_API_KEY && c.env.RESEND_FROM_EMAIL) {
+          if (emailNotification && evaluateCondition(emailNotification.condition, submission as Record<string, unknown>) && c.env.RESEND_API_KEY && c.env.RESEND_FROM_EMAIL) {
             // Merge enrichment (transcripts, AI descriptions) into the payload sent to the LLM
             const emailPayload: Record<string, unknown> = {
               ...(jsonPayload ?? (submission as Record<string, unknown>)),

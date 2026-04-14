@@ -312,7 +312,44 @@ ui.get("/:uid", (c) => {
     .kv-add:hover { border-color: #9ca3af; color: #374151; }
     .kv-col-headers { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .4rem; padding-bottom: .1rem; }
     .kv-col-header { font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
-
+    /* ── Condition builder ─────────────────────────────────────────────── */
+    .cond-section { border: 1.5px solid #e5e7eb; border-radius: 8px; margin-top: .5rem; }
+    .cond-section > summary { font-size: .82rem; font-weight: 600; color: #444; padding: .55rem .75rem; cursor: pointer; list-style: none; display: flex; align-items: center; gap: .4rem; }
+    .cond-section > summary::-webkit-details-marker { display: none; }
+    .cond-section > summary::before { content: '\\203A'; font-size: .65rem; color: #9ca3af; transition: transform .15s; }
+    .cond-section[open] > summary::before { transform: rotate(90deg); }
+    .cond-section-body { padding: .65rem .75rem; display: flex; flex-direction: column; gap: .6rem; }
+    .cond-ai-panel { background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 7px; padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; }
+    .cond-ai-label { font-size: .75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; }
+    .cond-ai-textarea { width: 100%; border: 1.5px solid #e5e7eb; border-radius: 6px; padding: .45rem .6rem; font-size: .82rem; font-family: inherit; resize: vertical; min-height: 60px; max-height: 180px; field-sizing: content; }
+    .cond-ai-textarea:focus { outline: none; border-color: #2563eb; }
+    .cond-ai-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .cond-ai-btn { background: #2563eb; color: #fff; border: none; border-radius: 6px; font-size: .78rem; font-weight: 600; padding: .3rem .7rem; cursor: pointer; }
+    .cond-ai-btn:hover { background: #1d4ed8; }
+    .cond-ai-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+    .cond-ai-clear { background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: .78rem; color: #6b7280; padding: .28rem .6rem; cursor: pointer; }
+    .cond-ai-clear:hover { border-color: #9ca3af; color: #374151; }
+    .cond-ai-err { font-size: .75rem; color: #dc2626; }
+    .cond-group { border: 1.5px solid #e5e7eb; border-radius: 7px; padding: .5rem .6rem; display: flex; flex-direction: column; gap: .4rem; }
+    .cond-group--root { border-color: transparent; padding: 0; }
+    .cond-group-header { display: flex; align-items: center; gap: .4rem; }
+    .cond-combinator-label { font-size: .75rem; font-weight: 600; color: #9ca3af; }
+    .cond-combinator { background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 5px; font-size: .78rem; font-weight: 700; color: #2563eb; padding: .2rem .55rem; cursor: pointer; }
+    .cond-combinator:hover { background: #dbeafe; }
+    .cond-remove-group { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem; line-height: 1; margin-left: auto; padding: .1rem .3rem; }
+    .cond-remove-group:hover { color: #dc2626; }
+    .cond-rules { display: flex; flex-direction: column; gap: .35rem; padding-left: .5rem; border-left: 2px solid #f3f4f6; }
+    .cond-rule { display: grid; grid-template-columns: 1.5fr 1.4fr 1.5fr auto; gap: .35rem; align-items: center; }
+    .cond-field-input, .cond-value-input { min-width: 0; padding: .3rem .5rem; border: 1.5px solid #e5e7eb; border-radius: 5px; font-size: .8rem; font-family: inherit; }
+    .cond-field-input:focus, .cond-value-input:focus { outline: none; border-color: #2563eb; }
+    .cond-op-select { min-width: 0; padding: .3rem .4rem; border: 1.5px solid #e5e7eb; border-radius: 5px; font-size: .78rem; background: #fff; }
+    .cond-op-select:focus { outline: none; border-color: #2563eb; }
+    .cond-rule-remove { background: none; border: 1.5px solid #e5e7eb; border-radius: 5px; color: #9ca3af; cursor: pointer; padding: .25rem .4rem; font-size: .9rem; line-height: 1; }
+    .cond-rule-remove:hover { border-color: #fca5a5; color: #dc2626; }
+    .cond-add-row { display: flex; gap: .4rem; margin-top: .2rem; }
+    .cond-add-btn { background: none; border: 1.5px dashed #d1d5db; border-radius: 5px; font-size: .76rem; font-weight: 600; color: #6b7280; cursor: pointer; padding: .25rem .55rem; }
+    .cond-add-btn:hover { border-color: #9ca3af; color: #374151; }
+    .cond-empty-hint { font-size: .76rem; color: #9ca3af; font-style: italic; }
   </style>
 </head>
 <body>
@@ -359,6 +396,21 @@ ui.get("/:uid", (c) => {
               <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="application" /><span>Files (PDF, etc.)</span></label>
             </div>
           </div>
+          <details class="cond-section" id="forward-cond-section">
+            <summary>Condition <span class="label-hint" style="margin-left:.3rem;font-weight:400">leave empty to always forward</span></summary>
+            <div class="cond-section-body">
+              <div class="cond-ai-panel">
+                <div class="cond-ai-label">Describe with AI</div>
+                <textarea id="forward-condition-prompt" class="cond-ai-textarea" placeholder='e.g. "Only forward when status equals approved and region contains north"'></textarea>
+                <div class="cond-ai-row">
+                  <button type="button" id="forward-condition-generate-btn" class="cond-ai-btn" onclick="condGenerateAI('forward')">Generate</button>
+                  <button type="button" class="cond-ai-clear" onclick="document.getElementById('forward-condition-prompt').value=''">Clear prompt</button>
+                  <span id="forward-condition-ai-err" class="cond-ai-err"></span>
+                </div>
+              </div>
+              <div id="forward-condition-builder"></div>
+            </div>
+          </details>
         </div>
 
         <!-- AI processing -->
@@ -567,6 +619,21 @@ ui.get("/:uid", (c) => {
             </div>
           </div>
         </div>
+        <details class="cond-section" id="email-cond-section">
+          <summary>Condition <span class="label-hint" style="margin-left:.3rem;font-weight:400">leave empty to always send</span></summary>
+          <div class="cond-section-body">
+            <div class="cond-ai-panel">
+              <div class="cond-ai-label">Describe with AI</div>
+              <textarea id="email-condition-prompt" class="cond-ai-textarea" placeholder='e.g. "Send only when status equals approved"'></textarea>
+              <div class="cond-ai-row">
+                <button type="button" id="email-condition-generate-btn" class="cond-ai-btn" onclick="condGenerateAI('email')">Generate</button>
+                <button type="button" class="cond-ai-clear" onclick="document.getElementById('email-condition-prompt').value=''">Clear prompt</button>
+                <span id="email-condition-ai-err" class="cond-ai-err"></span>
+              </div>
+            </div>
+            <div id="email-condition-builder"></div>
+          </div>
+        </details>
         <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
           <button type="button" class="select-btn" onclick="closeEmailModal(false)">Cancel</button>
           <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveEmailModal()">Save email settings</button>
@@ -602,6 +669,21 @@ ui.get("/:uid", (c) => {
           <label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" id="validate-include-reasoning" autocomplete="off" checked /><span style="font-size:.85rem;font-weight:600;color:#444">Include reasoning in submission</span></label>
           <p style="font-size:.78rem;color:#6b7280;margin:.3rem 0 0 1.55rem">Writes the AI&rsquo;s explanation back to the submission as <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_ai_validation_reasoning</code>.</p>
         </div>
+        <details class="cond-section" id="validate-cond-section">
+          <summary>Condition <span class="label-hint" style="margin-left:.3rem;font-weight:400">leave empty to always validate</span></summary>
+          <div class="cond-section-body">
+            <div class="cond-ai-panel">
+              <div class="cond-ai-label">Describe with AI</div>
+              <textarea id="validate-condition-prompt" class="cond-ai-textarea" placeholder='e.g. "Only validate when form_type equals field_report"'></textarea>
+              <div class="cond-ai-row">
+                <button type="button" id="validate-condition-generate-btn" class="cond-ai-btn" onclick="condGenerateAI('validate')">Generate</button>
+                <button type="button" class="cond-ai-clear" onclick="document.getElementById('validate-condition-prompt').value=''">Clear prompt</button>
+                <span id="validate-condition-ai-err" class="cond-ai-err"></span>
+              </div>
+            </div>
+            <div id="validate-condition-builder"></div>
+          </div>
+        </details>
         <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
           <button type="button" class="select-btn" onclick="closeValidateModal(false)">Cancel</button>
           <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="closeValidateModal(true)">Save</button>
@@ -628,6 +710,138 @@ ui.get("/:uid", (c) => {
     let emailNotificationConfig = null;
     // Validate submission config (null = disabled)
     let validateConfig = null;
+
+    // ── Condition builder ─────────────────────────────────────────────────────
+    const conditionState = {
+      email:    { type: 'group', combinator: 'and', rules: [] },
+      validate: { type: 'group', combinator: 'and', rules: [] },
+      forward:  { type: 'group', combinator: 'and', rules: [] },
+    };
+    const OPERATORS = [
+      ['equals', 'equals'], ['not_equals', 'does not equal'],
+      ['contains', 'contains'], ['not_contains', 'does not contain'],
+      ['starts_with', 'starts with'], ['ends_with', 'ends with'],
+      ['is_empty', 'is empty'], ['is_not_empty', 'is not empty'],
+      ['greater_than', '\u003e'], ['less_than', '\u003c'],
+      ['greater_than_or_equal', '\u2265'], ['less_than_or_equal', '\u2264'],
+    ];
+    const NO_VALUE_OPS = new Set(['is_empty', 'is_not_empty']);
+
+    function condGetNode(id, path) {
+      let node = conditionState[id];
+      for (const i of path) node = node.rules[i];
+      return node;
+    }
+    function condSetCondition(id, condition) {
+      conditionState[id] = (condition && condition.type === 'group' && Array.isArray(condition.rules))
+        ? JSON.parse(JSON.stringify(condition))
+        : { type: 'group', combinator: 'and', rules: [] };
+    }
+    function getCondition(id) {
+      const g = conditionState[id];
+      if (!g || g.rules.length === 0) return null;
+      return g;
+    }
+    function jq(v) { return JSON.stringify(v).replace(/"/g, '&quot;'); }
+    function renderConditionBuilder(id) {
+      const root = document.getElementById(id + '-condition-builder');
+      if (!root) return;
+      const g = conditionState[id];
+      root.innerHTML = renderCondGroup(id, g, [], true);
+    }
+    function renderCondGroup(id, group, path, isRoot) {
+      const ps = JSON.stringify(path);
+      const combLabel = group.combinator === 'and' ? 'All of' : 'Any of';
+      let html = '<div class="cond-group' + (isRoot ? ' cond-group--root' : '') + '">';
+      html += '<div class="cond-group-header">';
+      html += '<span class="cond-combinator-label">Where</span>';
+      html += '<button type="button" class="cond-combinator" onclick="condToggleCombinator(' + jq(id) + ',' + ps + ')">' + combLabel + '</button>';
+      if (!isRoot) html += '<button type="button" class="cond-remove-group" onclick="condRemoveNode(' + jq(id) + ',' + ps + ')" title="Remove group">&times;</button>';
+      html += '</div>';
+      if (group.rules.length > 0) {
+        html += '<div class="cond-rules">';
+        group.rules.forEach(function(r, i) {
+          const cp = path.concat([i]);
+          html += r.type === 'rule' ? renderCondRule(id, r, cp) : renderCondGroup(id, r, cp, false);
+        });
+        html += '</div>';
+      } else if (!isRoot) {
+        html += '<div class="cond-empty-hint">No rules yet \u2014 add one below.</div>';
+      }
+      html += '<div class="cond-add-row">';
+      html += '<button type="button" class="cond-add-btn" onclick="condAddRule(' + jq(id) + ',' + ps + ')">+ Add rule</button>';
+      html += '<button type="button" class="cond-add-btn" onclick="condAddGroup(' + jq(id) + ',' + ps + ')">+ Add group</button>';
+      if (isRoot && group.rules.length === 0) html += '<span class="cond-empty-hint" style="margin-left:.4rem">No condition \u2014 always runs</span>';
+      html += '</div>';
+      html += '</div>';
+      return html;
+    }
+    function renderCondRule(id, rule, path) {
+      const ps = JSON.stringify(path);
+      const noVal = NO_VALUE_OPS.has(rule.operator);
+      let html = '<div class="cond-rule">';
+      html += '<input class="cond-field-input" type="text" placeholder="field or xpath" value="' + escHtml(rule.field || '') + '" oninput="condUpdateRule(' + jq(id) + ',' + ps + ',&quot;field&quot;,this.value)" autocomplete="off" spellcheck="false" />';
+      html += '<select class="cond-op-select" onchange="condUpdateRule(' + jq(id) + ',' + ps + ',&quot;operator&quot;,this.value)">';
+      OPERATORS.forEach(function(op) {
+        html += '<option value="' + op[0] + '"' + (rule.operator === op[0] ? ' selected' : '') + '>' + op[1] + '</option>';
+      });
+      html += '</select>';
+      html += '<input class="cond-value-input" type="text" placeholder="value" value="' + escHtml(rule.value || '') + '" oninput="condUpdateRule(' + jq(id) + ',' + ps + ',&quot;value&quot;,this.value)" autocomplete="off" spellcheck="false"' + (noVal ? ' disabled style="visibility:hidden"' : '') + ' />';
+      html += '<button type="button" class="cond-rule-remove" onclick="condRemoveNode(' + jq(id) + ',' + ps + ')" title="Remove">&times;</button>';
+      html += '</div>';
+      return html;
+    }
+    function condToggleCombinator(id, path) {
+      const node = condGetNode(id, path);
+      node.combinator = node.combinator === 'and' ? 'or' : 'and';
+      renderConditionBuilder(id);
+    }
+    function condAddRule(id, path) {
+      condGetNode(id, path).rules.push({ type: 'rule', field: '', operator: 'equals', value: '' });
+      renderConditionBuilder(id);
+    }
+    function condAddGroup(id, path) {
+      condGetNode(id, path).rules.push({ type: 'group', combinator: 'and', rules: [] });
+      renderConditionBuilder(id);
+    }
+    function condRemoveNode(id, path) {
+      const parent = condGetNode(id, path.slice(0, -1));
+      parent.rules.splice(path[path.length - 1], 1);
+      renderConditionBuilder(id);
+    }
+    function condUpdateRule(id, path, field, value) {
+      const rule = condGetNode(id, path);
+      rule[field] = value;
+      if (field === 'operator') renderConditionBuilder(id);
+    }
+    async function condGenerateAI(id) {
+      const promptEl = document.getElementById(id + '-condition-prompt');
+      const errEl = document.getElementById(id + '-condition-ai-err');
+      const btn = document.getElementById(id + '-condition-generate-btn');
+      if (!promptEl || !errEl || !btn) return;
+      const prompt = promptEl.value.trim();
+      if (!prompt) { errEl.textContent = 'Enter a description first.'; return; }
+      errEl.textContent = '';
+      btn.disabled = true;
+      btn.textContent = 'Generating\u2026';
+      try {
+        const currentCondition = getCondition(id);
+        const res = await fetch('/api/configure/condition/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, ...(currentCondition ? { currentCondition } : {}) }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) { errEl.textContent = data.error || 'AI request failed'; return; }
+        condSetCondition(id, data.condition);
+        renderConditionBuilder(id);
+      } catch (e) {
+        errEl.textContent = 'Network error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+      }
+    }
 
     // Current state for the prompt modal
     let _promptXpath = null;
@@ -831,6 +1045,8 @@ ui.get("/:uid", (c) => {
       document.getElementById('validate-opt-not-approved').value = (cfg.options && cfg.options.notApproved) || '';
       document.getElementById('validate-opt-on-hold').value = (cfg.options && cfg.options.onHold) || '';
       document.getElementById('validate-include-reasoning').checked = cfg.includeReasoning !== false;
+      condSetCondition('validate', cfg.condition || null);
+      renderConditionBuilder('validate');
       document.getElementById('validate-modal').classList.add('open');
     }
 
@@ -845,6 +1061,8 @@ ui.get("/:uid", (c) => {
             onHold: document.getElementById('validate-opt-on-hold').value.trim(),
           },
         };
+        var vc = getCondition('validate');
+        if (vc) validateConfig.condition = vc;
         markDirty();
       }
       document.getElementById('validate-modal').classList.remove('open');
@@ -934,6 +1152,8 @@ ui.get("/:uid", (c) => {
         document.querySelector('input[name="' + prefix + '-mode"][value="' + mode + '"]').checked = true;
         setRecipientMode(prefix, mode);
       });
+      condSetCondition('email', cfg.condition || null);
+      renderConditionBuilder('email');
       document.getElementById('email-modal').classList.add('open');
     }
 
@@ -988,6 +1208,8 @@ ui.get("/:uid", (c) => {
         if (pdfTemplate) pdfConfig.template = pdfTemplate;
         emailNotificationConfig.pdfReport = pdfConfig;
       }
+      var ec = getCondition('email');
+      if (ec) emailNotificationConfig.condition = ec;
       document.getElementById('email-modal').classList.remove('open');
       document.getElementById('email-notification-enabled').checked = true;
       document.getElementById('email-configure-btn').style.display = '';
@@ -1174,6 +1396,10 @@ ui.get("/:uid", (c) => {
           document.getElementById('email-notification-enabled').checked = true;
           document.getElementById('email-configure-btn').style.display = '';
         }
+        if (data.forwardCondition) {
+          condSetCondition('forward', data.forwardCondition);
+          renderConditionBuilder('forward');
+        }
       } catch {}
     }
 
@@ -1224,7 +1450,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig }),
+          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, forwardCondition: getCondition('forward') }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
@@ -1404,7 +1630,7 @@ ui.get("/:uid", (c) => {
       }
     }
 
-    (async () => { await loadConfig(); loadSurvey(); refreshLogs(true); })();
+    (async () => { await loadConfig(); loadSurvey(); refreshLogs(true); renderConditionBuilder('forward'); })();
   </script>
 </body>
 </html>`
