@@ -62,4 +62,6 @@ export interface Env {
   OPENAI_API_KEY: string;
   RESEND_API_KEY: string;
   RESEND_FROM_EMAIL: string;
+  LOGIE_API_URL?: string;
+  LOGIE_API_KEY?: string;
 }

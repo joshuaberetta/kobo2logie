@@ -191,9 +191,10 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
+    const { forwardUrl: rawForwardUrl, forwardToken: rawForwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
+      forwardToLogie?: boolean;
       fields?: string[];
       transcribe?: { questions: string[]; model?: string; prompt?: string };
       extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
@@ -210,8 +211,13 @@ hook.post("/:formUID", async (c) => {
       forwardCondition?: Condition;
       geocodeCondition?: Condition;
     };
-    if (forwardUrl || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
+    if (rawForwardUrl || forwardToLogie || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
       const submission = body as KoboSubmission;
+
+      // Resolve effective forwarding target: LogIE (env vars) takes priority over custom URL
+      const forwardUrl = forwardToLogie ? (c.env.LOGIE_API_URL || rawForwardUrl) : rawForwardUrl;
+      const forwardToken = forwardToLogie ? undefined : rawForwardToken;
+      const logieApiKey = forwardToLogie ? (c.env.LOGIE_API_KEY || undefined) : undefined;
 
       // Build a filtered payload if the user has specified a fields subset (forwarding only)
       let jsonPayload: Record<string, unknown> | undefined;
@@ -306,7 +312,8 @@ hook.post("/:formUID", async (c) => {
               forwardMedia || undefined,
               extract || undefined,
               analyzeAudio || undefined,
-              extractText || undefined
+              extractText || undefined,
+              logieApiKey
             );
           }
 

@@ -205,6 +205,7 @@ configure.get("/project/:uid", async (c) => {
         server?: string;
         forwardUrl?: string;
         forwardToken?: string;
+        forwardToLogie?: boolean;
         fields?: string[];
         transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
         extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
@@ -225,6 +226,7 @@ configure.get("/project/:uid", async (c) => {
     server: config.server ?? "",
     forwardUrl: config.forwardUrl ?? "",
     forwardToken: config.forwardToken ?? "",
+    forwardToLogie: config.forwardToLogie ?? false,
     fields: config.fields ?? [],
     transcribe: config.transcribe ?? null,
     extract: config.extract ?? null,
@@ -246,9 +248,10 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = await c.req.json<{
+  const { forwardUrl, forwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
+    forwardToLogie?: boolean;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
     extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
@@ -506,6 +509,7 @@ configure.post("/project/:uid", async (c) => {
       ...current,
       forwardUrl: safeUrl,
       forwardToken: safeToken,
+      forwardToLogie: forwardToLogie === true,
       fields: safeFields,
       editOriginal: editOriginal === true,
       geocode: geocode === true,

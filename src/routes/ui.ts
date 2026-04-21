@@ -36,6 +36,10 @@ ui.get("/", (c) => {
     .status.error { color: #dc2626; }
     .continue-btn { margin-top: 1.25rem; width: 100%; padding: .7rem; background: #16a34a; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background .15s; display: none; }
     .continue-btn:hover { background: #15803d; }
+    .token-notes { background: #f8faff; border: 1.5px solid #dbeafe; border-radius: 8px; padding: .65rem .9rem; margin-top: .5rem; font-size: .81rem; color: #374151; display: flex; flex-direction: column; gap: .3rem; }
+    .token-notes ul { margin: .15rem 0 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
+    .token-notes code { font-family: monospace; background: #eff6ff; padding: .05em .3em; border-radius: 3px; font-size: .92em; }
+    .exists-banner { background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: .65rem .9rem; font-size: .85rem; color: #15803d; display: none; }
   </style>
 </head>
 <body>
@@ -55,13 +59,24 @@ ui.get("/", (c) => {
         <label for="uid">Form UID</label>
         <input id="uid" type="text" placeholder="e.g. a6LDoopohAy6s2Vw9gWo8p" autocomplete="off" spellcheck="false" />
       </div>
-      <div>
+      <div id="token-section" style="display:none">
         <label for="token">API Token</label>
         <input id="token" type="password" placeholder="your KoboToolbox API token" autocomplete="off" />
+        <div class="token-notes">
+          <div>This is the project owner&rsquo;s API key &mdash; it is <strong>not stored</strong> and is only used for this one-time setup.</div>
+          <div>When you click <strong>Set up integration</strong>:</div>
+          <ul>
+            <li>A <code>wfp_logie</code> user is added to the project with <em>View Submissions</em> permissions</li>
+            <li>A REST Service webhook is configured to forward new submissions to this integration</li>
+          </ul>
+        </div>
+      </div>
+      <div class="exists-banner" id="exists-banner">
+        &#10003; A configuration already exists for this project.
       </div>
     </div>
 
-    <button type="button" class="action-btn" id="setup-btn" onclick="setupIntegration()">Set up integration</button>
+    <button type="button" class="action-btn" id="setup-btn" style="display:none" onclick="setupIntegration()">Set up integration</button>
 
     <div class="results" id="results">
       <div class="result-row">
@@ -78,6 +93,49 @@ ui.get("/", (c) => {
   </div>
 
   <script>
+    let _configExists = false;
+    let _checkTimer = null;
+
+    function updateRootState(exists, uidPresent) {
+      _configExists = exists;
+      document.getElementById('token-section').style.display = (!exists && uidPresent) ? '' : 'none';
+      document.getElementById('exists-banner').style.display = exists ? 'block' : 'none';
+      document.getElementById('setup-btn').style.display = uidPresent ? '' : 'none';
+      document.getElementById('setup-btn').textContent = exists ? 'Go to project \u2192' : 'Set up integration';
+      document.getElementById('results').style.display = 'none';
+      document.getElementById('continue-btn').style.display = 'none';
+    }
+
+    async function checkConfig(uid) {
+      if (!uid) { updateRootState(false, false); return; }
+      try {
+        const res = await fetch('/api/configure/project/' + encodeURIComponent(uid));
+        if (res.ok) {
+          const data = await res.json();
+          // The endpoint always returns 200 with defaults; treat it as existing only if
+          // 'server' is non-empty (written during the rest-service setup step)
+          updateRootState(!!(data && data.server), true);
+        } else {
+          updateRootState(false, true);
+        }
+      } catch {
+        updateRootState(false, true);
+      }
+    }
+
+    document.getElementById('uid').addEventListener('input', function() {
+      clearTimeout(_checkTimer);
+      const uid = this.value.trim();
+      if (!uid) { updateRootState(false); return; }
+      _checkTimer = setTimeout(function() { checkConfig(uid); }, 450);
+    });
+
+    document.getElementById('uid').addEventListener('blur', function() {
+      clearTimeout(_checkTimer);
+      const uid = this.value.trim();
+      if (uid) checkConfig(uid);
+    });
+
     function getInputs() {
       return {
         server: document.getElementById('server').value,
@@ -98,6 +156,7 @@ ui.get("/", (c) => {
     }
 
     async function setupIntegration() {
+      if (_configExists) { goToProject(); return; }
       const { server, uid, token } = getInputs();
       if (!uid || !token) {
         document.getElementById('results').style.display = 'flex';
@@ -370,9 +429,26 @@ ui.get("/:uid", (c) => {
       <summary>Advanced settings</summary>
       <div class="advanced-body">
 
+        <!-- Hook URL -->
+        <div class="adv-group">
+          <div class="adv-group-title">Webhook</div>
+          <div>
+            <label>Hook URL<span class="label-hint">the endpoint KoboToolbox sends submissions to &mdash; copy and paste this into any external REST Service configuration</span></label>
+            <div style="display:flex;gap:.4rem;align-items:stretch;margin-top:.1rem">
+              <input id="hook-url-input" type="text" readonly style="font-family:monospace;font-size:.82rem;color:#374151;background:#f9fafb;flex:1" />
+              <button type="button" id="copy-hook-btn" class="select-btn" onclick="copyHookUrl()" style="flex-shrink:0;white-space:nowrap">Copy</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Forwarding -->
         <div class="adv-group">
           <div class="adv-group-title">Forwarding</div>
+          <div>
+            <label class="checkbox-row"><input type="checkbox" id="forward-to-logie" autocomplete="off" /><span>Forward directly to LogIE</span></label>
+            <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Send each submission to the LogIE service configured via <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">LOGIE_API_URL</code> and <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">LOGIE_API_KEY</code> environment variables. When enabled, the URL and token fields below are ignored.</p>
+          </div>
+          <div id="forward-custom-fields">
           <div>
             <label for="forward-url">Forwarding URL<span class="label-hint">optional — relay submissions to another service</span></label>
             <input id="forward-url" type="url" placeholder="https://your-service.example.com/webhook" autocomplete="off" spellcheck="false" />
@@ -380,6 +456,7 @@ ui.get("/:uid", (c) => {
           <div>
             <label for="forward-token">Bearer token<span class="label-hint">optional — sent as Authorization: Bearer &lt;token&gt;</span></label>
             <input id="forward-token" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+          </div>
           </div>
           <div>
             <label>Append to payload<span class="label-hint">static key-value pairs added under <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_metadata</code> in the forwarded JSON — e.g. context=mozambique</span></label>
@@ -694,6 +771,20 @@ ui.get("/:uid", (c) => {
 
   <script>
     const UID = ${raw(JSON.stringify(uid))};
+    document.getElementById('hook-url-input').value = window.location.origin + '/api/hook/' + UID;
+
+    async function copyHookUrl() {
+      const url = document.getElementById('hook-url-input').value;
+      const btn = document.getElementById('copy-hook-btn');
+      try {
+        await navigator.clipboard.writeText(url);
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy'; }, 1800);
+      } catch {
+        document.getElementById('hook-url-input').select();
+      }
+    }
+
     const SPARKLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
     let allQuestions = [];      // { xpath, label, type }[]
     let geocodeXpath = null;    // xpath of the geopoint question selected for geocoding
@@ -710,6 +801,11 @@ ui.get("/:uid", (c) => {
     let emailNotificationConfig = null;
     // Validate submission config (null = disabled)
     let validateConfig = null;
+
+    // ── LogIE checkbox toggle ─────────────────────────────────────────────
+    document.getElementById('forward-to-logie').addEventListener('change', function() {
+      document.getElementById('forward-custom-fields').style.display = this.checked ? 'none' : '';
+    });
 
     // ── Condition builder ─────────────────────────────────────────────────────
     const conditionState = {
@@ -1350,6 +1446,9 @@ ui.get("/:uid", (c) => {
         const fwdUrl = data.forwardUrl ?? '';
         document.getElementById('forward-url').value = fwdUrl;
         document.getElementById('forward-token').value = data.forwardToken ?? '';
+        const forwardToLogie = !!data.forwardToLogie;
+        document.getElementById('forward-to-logie').checked = forwardToLogie;
+        document.getElementById('forward-custom-fields').style.display = forwardToLogie ? 'none' : '';
         if (data.transcribe?.prompt) {
           document.getElementById('transcribe-prompt').value = data.transcribe.prompt;
         }
@@ -1450,7 +1549,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, forwardCondition: getCondition('forward') }),
+          body: JSON.stringify({ forwardUrl, forwardToken, forwardToLogie: document.getElementById('forward-to-logie').checked, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, forwardCondition: getCondition('forward') }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');

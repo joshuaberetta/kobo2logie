@@ -78,7 +78,8 @@ export async function forwardSubmission(
   forwardMedia?: string[],
   extractConfig?: { questions: string[]; model?: string; prompts?: PromptMap },
   analyzeAudioConfig?: { questions: string[]; model?: string; prompts?: PromptMap },
-  extractTextConfig?: { questions: string[]; model?: string; prompts?: PromptMap }
+  extractTextConfig?: { questions: string[]; model?: string; prompts?: PromptMap },
+  logieApiKey?: string
 ): Promise<ForwardResult> {
   try {
     const token = resolveKoboToken(koboBaseUrl, tokens);
@@ -348,7 +349,11 @@ export async function forwardSubmission(
     );
 
     const fwdHeaders: HeadersInit = {};
-    if (forwardToken) fwdHeaders["Authorization"] = `Bearer ${forwardToken}`;
+    if (logieApiKey) {
+      fwdHeaders["x-api-key"] = logieApiKey;
+    } else if (forwardToken) {
+      fwdHeaders["Authorization"] = `Bearer ${forwardToken}`;
+    }
 
     const fwdRes = await fetch(forwardUrl, {
       method: "POST",
