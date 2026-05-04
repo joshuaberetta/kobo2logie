@@ -307,6 +307,9 @@ ui.get("/:uid", (c) => {
     .status-msg { font-size: .85rem; min-height: 1.2rem; }
     .status-msg.success { color: #15803d; }
     .status-msg.error { color: #dc2626; }
+    .status-msg.unsaved { color: #b45309; }
+    .card { transition: box-shadow .2s; }
+    .card.dirty { box-shadow: 0 2px 12px rgba(180,83,9,.35); }
 
     /* Submission log */
     .log-header { display: flex; align-items: center; justify-content: space-between; margin-top: 2rem; margin-bottom: .5rem; }
@@ -949,12 +952,13 @@ ui.get("/:uid", (c) => {
       if (isDirty) return;
       isDirty = true;
       const btn = document.getElementById('save-btn');
-      if (btn) btn.textContent = 'Save *';
+      if (btn) btn.textContent = 'Save';
+      document.querySelector('.card')?.classList.add('dirty');
+      setStatus('unsaved', 'Unsaved changes');
     }
     function markClean() {
       isDirty = false;
-      const btn = document.getElementById('save-btn');
-      if (btn) btn.textContent = 'Save';
+      document.querySelector('.card')?.classList.remove('dirty');
     }
 
     // ── Rendering ────────────────────────────────────────────────────────────
