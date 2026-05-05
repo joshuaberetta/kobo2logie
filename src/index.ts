@@ -5,6 +5,7 @@ import hook from "./routes/hook.js";
 import stream from "./routes/stream.js";
 import media from "./routes/media.js";
 import configure from "./routes/configure.js";
+import retry from "./routes/retry.js";
 export { FormSession } from "./FormSession.js";
 import type { Env } from "./types.js";
 
@@ -19,6 +20,7 @@ app.route("/api/hook", hook);
 app.route("/api/stream", stream);
 app.route("/api/media", media);
 app.route("/api/configure", configure);
+app.route("/api/retry", retry);
 
 // Submission log for a form
 app.get("/api/logs/:formUID", async (c) => {

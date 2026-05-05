@@ -1660,7 +1660,10 @@ ui.get("/:uid", (c) => {
           '<td>' + editBadge + '</td>' +
           '<td>' + validateBadge + '</td>' +
           '<td style="color:#6b7280">' + httpCell + '</td>' +
-          '<td><button type="button" class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button></td>' +
+          '<td style="display:flex;gap:.35rem;justify-content:flex-end">' +
+            (!e.ok && e.uuid ? '<button type="button" class="log-detail-btn" id="retry-btn-' + idx + '" onclick="retrySubmission(' + idx + ')">Retry</button>' : '') +
+            '<button type="button" class="log-detail-btn" onclick="openLogDetail(' + idx + ')">Details</button>' +
+          '</td>' +
           '</tr>';
       }).join('');
     }
@@ -1732,6 +1735,30 @@ ui.get("/:uid", (c) => {
         }
       } catch {
         container.innerHTML = '<p class="log-empty">Could not load logs.</p>';
+      }
+    }
+
+    async function retrySubmission(idx) {
+      const e = logEntries[idx];
+      if (!e?.uuid) return;
+      const btn = document.getElementById('retry-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      try {
+        const res = await fetch('/api/retry/' + UID, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uuid: e.uuid })
+        });
+        if (res.ok) {
+          setTimeout(() => refreshLogs(true), 1500);
+        } else {
+          const data = await res.json().catch(() => ({}));
+          alert('Retry failed: ' + (data.error || res.status));
+          if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+        }
+      } catch (err) {
+        alert('Retry failed: ' + err);
+        if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
       }
     }
 
