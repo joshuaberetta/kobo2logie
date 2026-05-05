@@ -569,6 +569,7 @@ ui.get("/:uid", (c) => {
       <button type="button" class="log-title-btn" id="log-toggle" onclick="toggleLog()"><svg class="log-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Submission log</button>
       <div class="log-actions">
         <button type="button" class="log-refresh-btn" onclick="refreshLogs(true)">Refresh</button>
+        <button type="button" class="log-refresh-btn" onclick="exportLogs()" id="log-export-btn">Export</button>
       </div>
     </div>
     <div class="log-body" id="log-body">
@@ -1731,6 +1732,34 @@ ui.get("/:uid", (c) => {
         }
       } catch {
         container.innerHTML = '<p class="log-empty">Could not load logs.</p>';
+      }
+    }
+
+    async function exportLogs() {
+      const btn = document.getElementById('log-export-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
+      try {
+        const all = [];
+        let offset = 0;
+        const limit = 100;
+        while (true) {
+          const res = await fetch('/api/logs/' + UID + '?offset=' + offset + '&limit=' + limit);
+          if (!res.ok) break;
+          const data = await res.json();
+          const page = Array.isArray(data.entries) ? data.entries : [];
+          all.push(...page);
+          if (!data.hasMore || page.length === 0) break;
+          offset += page.length;
+        }
+        const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'submission-log-' + UID + '-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Export'; }
       }
     }
 
