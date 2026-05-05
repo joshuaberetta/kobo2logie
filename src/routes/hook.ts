@@ -224,8 +224,9 @@ hook.post("/:formUID", async (c) => {
       if (forwardUrl) {
         if (fields && fields.length > 0) {
           const filtered: Record<string, unknown> = {};
-          // _uuid is always included regardless of the fields filter
-          const fieldsWithUuid = fields.includes("_uuid") ? fields : ["_uuid", ...fields];
+          // _uuid and _submission_time are always included regardless of the fields filter
+          const alwaysIncluded = ["_uuid", "_submission_time"];
+          const fieldsWithUuid = [...new Set([...alwaysIncluded, ...fields])];
           for (const f of fieldsWithUuid) {
             if (Object.prototype.hasOwnProperty.call(submission, f)) {
               filtered[f] = (submission as Record<string, unknown>)[f];

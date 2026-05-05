@@ -966,13 +966,13 @@ ui.get("/:uid", (c) => {
       const list = document.getElementById('fields-list');
       if (allQuestions.length === 0) return;
       const hasFilter = configFields.length > 0;
-      // _uuid is always first and always locked
-      const uuidRow = '<div class="q-row">' +
-        '<input type="checkbox" name="field-locked" value="_uuid" checked disabled style="accent-color:#93c5fd;cursor:not-allowed" />' +
-        '<span class="q-label" style="color:#9ca3af;flex:1;min-width:0">_uuid</span>' +
+      // _uuid and _submission_time are always first and always locked
+      const makeLockedRow = (name) => '<div class="q-row">' +
+        '<input type="checkbox" name="field-locked" value="' + name + '" checked disabled style="accent-color:#93c5fd;cursor:not-allowed" />' +
+        '<span class="q-label" style="color:#9ca3af;flex:1;min-width:0">' + name + '</span>' +
         '<span style="font-size:.72rem;color:#d1d5db;flex-shrink:0">(always included)</span>' +
         '</div>';
-      list.innerHTML = uuidRow + allQuestions.map(q => {
+      list.innerHTML = makeLockedRow('_uuid') + makeLockedRow('_submission_time') + allQuestions.map(q => {
         const checked = (!hasFilter || configFields.includes(q.xpath)) ? ' checked' : '';
         const xpathSpan = (q.label !== q.xpath)
           ? '<span class="q-xpath">' + escHtml(q.xpath) + '</span>' : '';
@@ -1518,9 +1518,10 @@ ui.get("/:uid", (c) => {
       const geocodeField = geocodeXpath || '';
       const geocode = !!geocodeField;
       const selected = getSelectedFields();
-      // _uuid is always included; treat "every non-locked question checked" as "forward all" (empty array)
+      // _uuid and _submission_time are always included; treat "every non-locked question checked" as "forward all" (empty array)
       const allChecked = allQuestions.length > 0 && selected.length === allQuestions.length;
-      const fields = allChecked ? [] : ['_uuid', ...selected.filter(f => f !== '_uuid')];
+      const alwaysIncluded = ['_uuid', '_submission_time'];
+      const fields = allChecked ? [] : [...alwaysIncluded, ...selected.filter(f => !alwaysIncluded.includes(f))];
       const selectedAudio = getSelectedAudioQs();
       const transcribePrompt = document.getElementById('transcribe-prompt').value.trim();
       const transcribeTranslate = document.getElementById('transcribe-translate').value.trim();

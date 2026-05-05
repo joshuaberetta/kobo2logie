@@ -1,21 +1,77 @@
 # kobo2logie
 
-A Cloudflare Worker that receives KoboToolbox form submission webhooks and forwards them to LogIE. Provides a simple configuration UI to set up the KoboToolbox REST Service integration and permissions in one click.
+A Cloudflare Worker that receives KoboToolbox form submission webhooks and enriches, processes, and forwards them to external services. Provides a browser-based configuration UI to register the KoboToolbox REST Service integration and configure all pipeline options per form, with no server restarts required.
 
 Built with [Hono](https://hono.dev/) on Cloudflare Workers + Durable Objects.
 
 ---
 
-## How it works
+## What it does
+
+kobo2logie sits between KoboToolbox and the rest of your data pipeline. When a form is submitted on Kobo, the JSON payload is POSTed to this worker, which then runs any combination of the following steps — all configurable per form through the browser UI:
+
+### Real-time submission viewer
+Every incoming submission is instantly pushed over WebSocket to any open browser tabs viewing that form's dashboard. The viewer shows a live submission list, a JSON detail panel, and an image grid for photo attachments. Up to 50 submissions are buffered in memory per form (cleared 60 seconds after the last tab closes).
+
+### Field filtering
+Optionally forward only a selected subset of form fields. `_uuid` is always included regardless. If none of the configured fields match, the full payload is forwarded as a fallback.
+
+### Forwarding
+POST the submission payload to any HTTPS URL, with an optional `Authorization: Bearer` token. Forwarding can also target LogIE directly using server-side environment variables (no token stored in KV). A **conditional rule engine** (AND/OR groups of field comparisons) can gate forwarding so it only fires when the submission matches specific criteria.
+
+### Static value injection
+Append a set of static key-value pairs under a `_metadata` key in every forwarded payload — useful for tagging submissions with a project code, region, or deployment identifier.
+
+### Audio transcription
+Fetch audio attachments from Kobo and transcribe them via OpenAI (Whisper). The transcript is injected into the payload as `<question_xpath>_transcript` before forwarding. Optionally translate the transcript into another language in the same step. Files over 25 MB are silently skipped.
+
+### Image field extraction
+Send image attachments to OpenAI vision and extract structured fields from them (e.g. read a document, parse a photo of a form). Per-question prompts define exactly which fields to extract. Extracted values are injected into the forwarded payload and can be written back to Kobo.
+
+### Audio analysis
+Transcribe audio attachments and then run structured field extraction against the transcript — extract named entities, assessment scores, or any key facts described in the recording. Per-question prompts control what is extracted.
+
+### Text field extraction
+Run AI-powered structured extraction on any free-text answer in the form. Useful for mining named entities, locations, organizations, or custom fields from open-ended responses.
+
+### Reverse geocoding
+Convert GPS coordinates (from a Kobo geopoint question or `_geolocation`) to ADM0–ADM4 administrative boundary P-codes and names using a self-hosted service backed by HDX/OCHA COD boundary data. Results (`_geo_adm0_pcode`, `_geo_adm0_name`, …, `_geo_adm4_pcode`, `_geo_adm4_name`) are injected into the forwarded payload and can be written back to Kobo. Conditional logic can gate geocoding independently of forwarding.
+
+### Edit-back to Kobo
+Write any enriched values (transcripts, extracted fields, geocoded P-codes, static appended values) back to the original Kobo submission via the Kobo bulk-edit API. This makes enriched data visible inside the Kobo data table without any separate sync step.
+
+### AI-powered validation
+Use OpenAI to automatically set a Kobo submission's validation status (`approved`, `not_approved`, or `on_hold`). You provide plain-English criteria for each status and the AI reviews the submission payload and decides. The reasoning can optionally be written back to the submission as a field. Conditional logic can restrict which submissions are validated automatically.
+
+### Email notifications
+Send HTML email notifications via [Resend](https://resend.com) on each submission. Options include:
+
+- **Template body** — write a static body with `{{field_xpath}}` placeholders that are filled from the submission.
+- **AI-generated body** — provide instructions and let GPT-4o-mini compose a professional HTML email from the submission data.
+- **File attachments** — attach any Kobo media file (photo, document) directly to the email.
+- **PDF report attachment** — generate a formatted PDF report of the submission (via the kobo2pdf service) and attach it to the email.
+- **Conditional sending** — only send the email when the submission matches a configured rule condition.
+- **Dynamic recipients** — specify `to`, `cc`, and `bcc` as static email lists and/or field xpaths that contain email addresses extracted from the submission.
+
+### PDF reports
+Generate a formatted PDF from a submission using the [kobo2pdf](https://kobo2pdf.imtools.info) rendering service. Image attachments are fetched from Kobo and embedded in the PDF. The PDF can be attached to email notifications.
+
+---
+
+## Pipeline execution order
+
+For each incoming submission, the following steps run in order (all fire-and-forget, non-blocking to the webhook response):
 
 ```
-Kobo form submitted
-  → POSTs JSON to /api/hook/{formUID}
-    → Cloudflare Worker
-        → optionally filters fields
-        → optionally transcribes audio attachments via OpenAI
-        → forwards enriched payload to an external service
+1. Geocode coordinates → P-codes
+2. Forward payload (with transcription / extraction / analysis / media)
+3. Edit-back enriched values to Kobo
+4. AI validation → set Kobo validation status
+5. Log result to Durable Object (visible in the browser viewer)
+6. Send email notification (with optional PDF attachment)
 ```
+
+All enrichment results from step 2 (transcripts, extracted fields) are available to steps 3, 4, and 6.
 
 ---
 
@@ -47,7 +103,11 @@ Create a `.dev.vars` file in the project root with your secrets (this file is gi
 ```ini
 KOBO_API_TOKEN_GLOBAL=your-global-kobo-token
 KOBO_API_TOKEN_EU=your-eu-kobo-token
-OPENAI_API_KEY=sk-...        # only needed if using audio transcription
+OPENAI_API_KEY=sk-...          # required for transcription, extraction, analysis, and AI validation
+RESEND_API_KEY=re_...          # required for email notifications
+RESEND_FROM_EMAIL=you@domain.com  # verified Resend sender address
+LOGIE_API_URL=https://...      # optional: LogIE API endpoint
+LOGIE_API_KEY=...              # optional: LogIE API key
 ```
 
 ---
@@ -69,7 +129,11 @@ Set production secrets:
 ```bash
 wrangler secret put KOBO_API_TOKEN_GLOBAL
 wrangler secret put KOBO_API_TOKEN_EU
-wrangler secret put OPENAI_API_KEY   # only needed if using audio transcription
+wrangler secret put OPENAI_API_KEY       # required for AI features
+wrangler secret put RESEND_API_KEY       # required for email notifications
+wrangler secret put RESEND_FROM_EMAIL    # required for email notifications
+wrangler secret put LOGIE_API_URL        # optional: LogIE endpoint
+wrangler secret put LOGIE_API_KEY        # optional: LogIE API key
 ```
 
 ---
@@ -130,8 +194,23 @@ For each transcribed question, the worker fetches the audio attachment from Kobo
 |---|---|
 | **Audio questions** | Checkbox list of audio questions. All selected by default. |
 | **Model** | OpenAI model to use — `gpt-4o-mini-transcribe` (default) or `gpt-4o-transcribe`. |
+| **Prompt** | Optional context hint passed to the transcription model. |
+| **Translate to** | Optional language — the transcript is translated after transcription. |
 
 > Files larger than 25 MB are silently skipped (OpenAI hard limit). Transcription errors never block submission forwarding.
+
+#### Additional enrichment options
+
+The configuration page also exposes:
+
+- **Image extraction** — run OpenAI vision on image attachments to extract structured fields per question.
+- **Audio analysis** — transcribe audio and run structured field extraction on the resulting transcript.
+- **Text extraction** — run AI extraction on free-text answers to surface named entities and key facts.
+- **Geocoding** — reverse-geocode a geopoint question's coordinates to ADM0–ADM4 P-codes.
+- **Edit-back** — write all enriched values back to the original Kobo submission.
+- **AI validation** — automatically set the Kobo validation status based on configurable AI criteria.
+- **Email notifications** — send email on each submission with optional AI-generated body and PDF attachment.
+- **Conditional logic** — AND/OR rule groups that gate forwarding, geocoding, validation, or email independently.
 
 Click **Save** to persist all settings. You can return to this page at any time.
 
@@ -146,18 +225,28 @@ kobo2logie/
 ├── tsconfig.json
 └── src/
     ├── index.ts               # Hono app entry point, route registration
-    ├── FormSession.ts         # Durable Object — WebSocket hub + submission buffer
-    ├── types.ts               # Shared Env interface
+    ├── FormSession.ts         # Durable Object — WebSocket hub + submission buffer + log
+    ├── types.ts               # Shared Env interface + Condition/LogEntry types
     ├── routes/
-    │   ├── ui.ts              # UI pages: GET / (setup) and GET /:uid (project settings)
-    │   ├── configure.ts       # /api/configure/* — Kobo API proxy + project KV config
-    │   ├── hook.ts            # POST /api/hook/:formUID — webhook receiver
-    │   ├── stream.ts          # WebSocket /api/stream/:formUID
-    │   └── media.ts           # Authenticated media proxy /api/media
+    │   ├── ui.ts              # GET / (setup) and GET /:uid (project settings UI)
+    │   ├── configure.ts       # /api/configure/* — Kobo API proxy + KV config read/write
+    │   ├── hook.ts            # POST /api/hook/:formUID — webhook receiver + enrichment pipeline
+    │   ├── stream.ts          # WebSocket /api/stream/:formUID — live viewer connection
+    │   └── media.ts           # GET /api/media — authenticated Kobo media proxy
     └── lib/
-        ├── kobo.ts            # Types, SSRF helper, attachment utilities
-        ├── forward.ts         # Multipart forwarding to external services
-        └── transcribe.ts      # OpenAI audio transcription helper
+        ├── kobo.ts            # Types, SSRF allowlist, attachment helpers
+        ├── forward.ts         # Multipart forwarding + enrichment orchestration
+        ├── transcribe.ts      # OpenAI Whisper audio transcription + optional translation
+        ├── extract.ts         # OpenAI vision image → structured field extraction
+        ├── analyzeAudio.ts    # Audio transcription → structured field analysis
+        ├── extractText.ts     # Free-text answer → structured field extraction
+        ├── geocode.ts         # Reverse geocoding → ADM0–ADM4 P-codes (imtools geocoder)
+        ├── koboEdit.ts        # Kobo bulk-edit API + validation status update
+        ├── validateSubmission.ts  # AI submission validation (OpenAI)
+        ├── pdfReport.ts       # PDF report generation via kobo2pdf service
+        ├── evaluateCondition.ts   # Rule-based condition evaluator (AND/OR groups)
+        ├── submissionValue.ts # Nested xpath value resolver for submission payloads
+        └── describe.ts        # (unused placeholder)
 ```
 
 ---
@@ -171,16 +260,75 @@ Per-project settings are stored in the `FORWARD_CONFIG` KV namespace under the f
   "server": "https://kf.kobotoolbox.org",
   "forwardUrl": "https://your-service.example.com/webhook",
   "forwardToken": "optional-bearer-token",
+  "forwardToLogie": false,
   "fields": ["xpath1", "xpath2"],
+  "forwardCondition": { "type": "group", "combinator": "and", "rules": [] },
+  "appendValues": [{ "key": "project_code", "value": "SYR-2025" }],
+  "forwardMedia": ["photo_question_xpath"],
   "transcribe": {
     "questions": ["audio_question_xpath"],
-    "model": "gpt-4o-mini-transcribe"
+    "model": "gpt-4o-mini-transcribe",
+    "prompt": "optional context for the transcription model",
+    "translateTo": "English"
+  },
+  "extract": {
+    "questions": ["photo_question_xpath"],
+    "model": "gpt-4o-mini",
+    "prompts": {
+      "photo_question_xpath": {
+        "description": "Optional context",
+        "fields": [{ "key": "extracted_field", "instruction": "What to extract" }]
+      }
+    }
+  },
+  "analyzeAudio": {
+    "questions": ["audio_question_xpath"],
+    "model": "gpt-4o-mini",
+    "prompts": {}
+  },
+  "extractText": {
+    "questions": ["text_question_xpath"],
+    "model": "gpt-4o-mini",
+    "prompts": {}
+  },
+  "geocode": true,
+  "geocodeField": "geopoint_question_xpath",
+  "geocodeCondition": { "type": "group", "combinator": "and", "rules": [] },
+  "editOriginal": true,
+  "validateSubmission": {
+    "instructions": "Approve if all required fields are filled.",
+    "includeReasoning": true,
+    "options": {
+      "approved": "All required fields present and valid.",
+      "notApproved": "Missing required data.",
+      "onHold": "Needs manual review."
+    },
+    "condition": { "type": "group", "combinator": "and", "rules": [] }
+  },
+  "emailNotification": {
+    "to": ["recipient@example.com"],
+    "toXPaths": ["email_question_xpath"],
+    "cc": [],
+    "bcc": [],
+    "subject": "New submission: {{title_field}}",
+    "body": "A submission was received.\n\nName: {{name_field}}",
+    "aiBody": { "instructions": "Write a concise notification for field officers." },
+    "attachments": ["photo_question_xpath"],
+    "pdfReport": { "template": "submission", "formTitle": "Assessment Form" },
+    "condition": { "type": "group", "combinator": "and", "rules": [] }
   }
 }
 ```
 
-- `fields` — empty array means forward all fields.
-- `transcribe` — `null` or absent means transcription is disabled.
+Key notes:
+- `fields` — empty array means forward all fields; `_uuid` is always included.
+- `forwardToLogie` — when `true`, uses `LOGIE_API_URL` / `LOGIE_API_KEY` env vars instead of `forwardUrl` / `forwardToken`.
+- `transcribe` / `extract` / `analyzeAudio` / `extractText` — `null` or absent means that enrichment step is disabled.
+- `geocode` — requires `geocodeField` (a geopoint xpath) or falls back to `_geolocation`.
+- `editOriginal` — writes all enrichment results back to the Kobo submission via bulk-edit.
+- `validateSubmission` — `null` or absent means AI validation is disabled.
+- `emailNotification` — `null` or absent means no email is sent. `aiBody` takes priority over `body` when present.
+- All `condition` fields use the same rule-group schema and are optional; absent means the step always runs.
 
 ---
 
