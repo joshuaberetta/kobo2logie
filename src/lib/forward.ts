@@ -4,6 +4,7 @@ import { transcribeAudio } from "./transcribe.js";
 import { extractFields } from "./extract.js";
 import { analyzeAudioText } from "./analyzeAudio.js";
 import { extractTextFields } from "./extractText.js";
+import type { EnrichmentStepResult } from "../types.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
@@ -37,6 +38,12 @@ export interface ForwardResult {
   error?: string;
   /** Keys written into the payload during enrichment (transcripts + descriptions). Used by the edit-back step. */
   enrichment?: Record<string, string>;
+  steps?: {
+    transcribe?: Record<string, EnrichmentStepResult>;
+    analyzeAudio?: Record<string, EnrichmentStepResult>;
+    extract?: Record<string, EnrichmentStepResult>;
+    extractText?: Record<string, EnrichmentStepResult>;
+  };
 }
 
 function resolveKoboToken(
@@ -87,12 +94,14 @@ export async function forwardSubmission(
     // Tracks enrichment values added to the payload — returned so the caller
     // can optionally write them back to Kobo via the edit-back step.
     const enrichment: Record<string, string> = {};
+    const steps: NonNullable<ForwardResult["steps"]> = {};
 
     // Build the working payload; we may mutate it with transcript keys below.
     const payload: Record<string, unknown> = jsonPayload ? { ...jsonPayload } : { ...submission };
 
     // ── Transcription ──────────────────────────────────────────────────────
     if (transcribeConfig && openaiApiKey && transcribeConfig.questions.length > 0) {
+      steps.transcribe = {};
       // Build a lookup map: question_xpath → attachment
       const audioByXpath = new Map(
         (submission._attachments ?? [])
@@ -105,6 +114,7 @@ export async function forwardSubmission(
           const att = audioByXpath.get(questionName);
           if (!att) {
             console.warn(`[transcribe] No audio attachment found for question_xpath "${questionName}"`);
+            steps.transcribe![questionName] = { ok: false, error: "No audio attachment found" };
             return;
           }
           try {
@@ -115,6 +125,7 @@ export async function forwardSubmission(
               console.error(
                 `[transcribe] Failed to fetch audio for "${questionName}": HTTP ${res.status}`
               );
+              steps.transcribe![questionName] = { ok: false, error: `Failed to fetch audio: HTTP ${res.status}` };
               return;
             }
             const blob = await res.blob();
@@ -158,17 +169,23 @@ export async function forwardSubmission(
                   console.error(`[transcribe] Translation error for "${questionName}":`, err);
                 }
               }
-              payload[`${questionName}_transcript`] = finalText;
-              enrichment[`${questionName}_transcript`] = finalText;
+              const transcriptKey = `${questionName}_transcript`;
+              payload[transcriptKey] = finalText;
+              enrichment[transcriptKey] = finalText;
+              steps.transcribe![questionName] = { ok: true, keys: [transcriptKey] };
+            } else {
+              steps.transcribe![questionName] = { ok: false, error: "No transcript returned" };
             }
           } catch (err) {
             console.error(`[transcribe] Error transcribing "${questionName}":`, err);
+            steps.transcribe![questionName] = { ok: false, error: String(err) };
           }
         })
       );
     }
     // ── Audio analysis ─────────────────────────────────────────────────────
     if (analyzeAudioConfig && openaiApiKey && analyzeAudioConfig.questions.length > 0) {
+      steps.analyzeAudio = {};
       const audioByXpathForAnalysis = new Map(
         (submission._attachments ?? [])
           .filter((a) => !a.is_deleted && a.mimetype.startsWith("audio/"))
@@ -186,6 +203,7 @@ export async function forwardSubmission(
               const att = audioByXpathForAnalysis.get(questionName);
               if (!att) {
                 console.warn(`[analyze-audio] No audio attachment found for question_xpath "${questionName}"`);
+                steps.analyzeAudio![questionName] = { ok: false, error: "No audio attachment found" };
                 return;
               }
               const res = await fetch(att.download_url, {
@@ -193,13 +211,17 @@ export async function forwardSubmission(
               });
               if (!res.ok) {
                 console.error(`[analyze-audio] Failed to fetch audio for "${questionName}": HTTP ${res.status}`);
+                steps.analyzeAudio![questionName] = { ok: false, error: `Failed to fetch audio: HTTP ${res.status}` };
                 return;
               }
               const blob = await res.blob();
               transcript = await transcribeAudio(blob, att.media_file_basename, openaiApiKey) || undefined;
             }
 
-            if (!transcript) return;
+            if (!transcript) {
+              steps.analyzeAudio![questionName] = { ok: false, error: "No transcript available for analysis" };
+              return;
+            }
 
             const analyzeAudioFields = analyzeAudioConfig.prompts?.[questionName];
             const analyzed = await analyzeAudioText(
@@ -211,21 +233,28 @@ export async function forwardSubmission(
                 : undefined
             );
             if (analyzed) {
+              const writtenKeys: string[] = [];
               for (const [k, v] of Object.entries(analyzed)) {
                 if (k !== "_uuid") {
                   payload[k] = v;
                   enrichment[k] = v;
+                  writtenKeys.push(k);
                 }
               }
+              steps.analyzeAudio![questionName] = { ok: true, keys: writtenKeys };
+            } else {
+              steps.analyzeAudio![questionName] = { ok: false, error: "No analysis returned" };
             }
           } catch (err) {
             console.error(`[analyze-audio] Error analyzing "${questionName}":`, err);
+            steps.analyzeAudio![questionName] = { ok: false, error: String(err) };
           }
         })
       );
     }
     // ── Field extraction ───────────────────────────────────────────────────
     if (extractConfig && openaiApiKey && extractConfig.questions.length > 0) {
+      steps.extract = {};
       const imageByXpath = new Map(
         (submission._attachments ?? [])
           .filter((a) => !a.is_deleted && a.mimetype.startsWith("image/"))
@@ -237,6 +266,7 @@ export async function forwardSubmission(
           const att = imageByXpath.get(questionName);
           if (!att) {
             console.warn(`[extract] No image attachment found for question_xpath "${questionName}"`);
+            steps.extract![questionName] = { ok: false, error: "No image attachment found" };
             return;
           }
           try {
@@ -245,6 +275,7 @@ export async function forwardSubmission(
             });
             if (!res.ok) {
               console.error(`[extract] Failed to fetch image for "${questionName}": HTTP ${res.status}`);
+              steps.extract![questionName] = { ok: false, error: `Failed to fetch image: HTTP ${res.status}` };
               return;
             }
             const blob = await res.blob();
@@ -259,15 +290,21 @@ export async function forwardSubmission(
                 : undefined
             );
             if (extracted) {
+              const writtenKeys: string[] = [];
               for (const [k, v] of Object.entries(extracted)) {
                 if (k !== "_uuid") {
                   payload[k] = v;
                   enrichment[k] = v;
+                  writtenKeys.push(k);
                 }
               }
+              steps.extract![questionName] = { ok: true, keys: writtenKeys };
+            } else {
+              steps.extract![questionName] = { ok: false, error: "No fields extracted" };
             }
           } catch (err) {
             console.error(`[extract] Error extracting from "${questionName}":`, err);
+            steps.extract![questionName] = { ok: false, error: String(err) };
           }
         })
       );
@@ -275,11 +312,15 @@ export async function forwardSubmission(
 
     // ── Text field extraction ─────────────────────────────────────────────
     if (extractTextConfig && openaiApiKey && extractTextConfig.questions.length > 0) {
+      steps.extractText = {};
       await Promise.all(
         extractTextConfig.questions.map(async (questionName) => {
           try {
             const text = (submission as Record<string, unknown>)[questionName];
-            if (typeof text !== "string" || !text.trim()) return;
+            if (typeof text !== "string" || !text.trim()) {
+              steps.extractText![questionName] = { ok: false, error: "No text value found for question" };
+              return;
+            }
             const extractTextFields_ = extractTextConfig.prompts?.[questionName];
             const extracted = await extractTextFields(
               text,
@@ -290,15 +331,21 @@ export async function forwardSubmission(
                 : undefined
             );
             if (extracted) {
+              const writtenKeys: string[] = [];
               for (const [k, v] of Object.entries(extracted)) {
                 if (k !== "_uuid") {
                   payload[k] = v;
                   enrichment[k] = v;
+                  writtenKeys.push(k);
                 }
               }
+              steps.extractText![questionName] = { ok: true, keys: writtenKeys };
+            } else {
+              steps.extractText![questionName] = { ok: false, error: "No fields extracted" };
             }
           } catch (err) {
             console.error(`[extract-text] Error extracting from "${questionName}":`, err);
+            steps.extractText![questionName] = { ok: false, error: String(err) };
           }
         })
       );
@@ -306,7 +353,7 @@ export async function forwardSubmission(
 
     // If there is no forwarding target, return enrichment and stop here.
     if (!forwardUrl) {
-      return { ok: true, enrichment };
+      return { ok: true, enrichment, steps: Object.keys(steps).length > 0 ? steps : undefined };
     }
 
     // ── Attachment fetch & forward ─────────────────────────────────────────
@@ -363,13 +410,14 @@ export async function forwardSubmission(
 
     const responseBody = await fwdRes.text().catch(() => undefined);
     const truncatedBody = responseBody ? responseBody.slice(0, 2048) : undefined;
+    const stepsResult = Object.keys(steps).length > 0 ? steps : undefined;
     if (!fwdRes.ok) {
       console.error(
         `[forward] External service returned HTTP ${fwdRes.status} for ${forwardUrl}`
       );
-      return { ok: false, httpStatus: fwdRes.status, responseBody: truncatedBody, enrichment };
+      return { ok: false, httpStatus: fwdRes.status, responseBody: truncatedBody, enrichment, steps: stepsResult };
     }
-    return { ok: true, httpStatus: fwdRes.status, responseBody: truncatedBody, enrichment };
+    return { ok: true, httpStatus: fwdRes.status, responseBody: truncatedBody, enrichment, steps: stepsResult };
   } catch (err) {
     console.error("[forward] Unhandled error in forwardSubmission:", err);
     return { ok: false, error: String(err) };
