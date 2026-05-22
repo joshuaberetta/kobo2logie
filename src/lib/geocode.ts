@@ -51,13 +51,12 @@ export async function geocodeSubmission(lat: number, lon: number): Promise<Recor
     return {};
   }
 
-  // Map adm{n}_pcode / adm{n}_name → _geo_adm{n}_pcode / _geo_adm{n}_name
   const out: Record<string, string> = {};
   for (let n = 0; n <= 4; n++) {
     const pcode = data[`adm${n}_pcode`];
     const name  = data[`adm${n}_name`];
-    if (typeof pcode === "string" && pcode) out[`_geo_adm${n}_pcode`] = pcode;
-    if (typeof name  === "string" && name)  out[`_geo_adm${n}_name`]  = name;
+    if (typeof pcode === "string" && pcode) out[`_adm${n}_pcode`] = pcode;
+    if (typeof name  === "string" && name)  out[`_adm${n}_name`]  = name;
   }
   return out;
 }
@@ -99,14 +98,14 @@ export async function geocodeAddress(address: string): Promise<Record<string, st
   const out: Record<string, string> = {};
 
   // Include resolved coordinates
-  if (typeof data.latitude === "number") out["_geo_latitude"] = String(data.latitude);
-  if (typeof data.longitude === "number") out["_geo_longitude"] = String(data.longitude);
+  if (typeof data.latitude === "number") out["_latitude"] = String(data.latitude);
+  if (typeof data.longitude === "number") out["_longitude"] = String(data.longitude);
 
   for (let n = 0; n <= 4; n++) {
     const pcode = data[`adm${n}_pcode`];
     const name  = data[`adm${n}_name`];
-    if (typeof pcode === "string" && pcode) out[`_geo_adm${n}_pcode`] = pcode;
-    if (typeof name  === "string" && name)  out[`_geo_adm${n}_name`]  = name;
+    if (typeof pcode === "string" && pcode) out[`_adm${n}_pcode`] = pcode;
+    if (typeof name  === "string" && name)  out[`_adm${n}_name`]  = name;
   }
   return out;
 }
