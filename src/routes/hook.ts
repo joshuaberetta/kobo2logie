@@ -1,10 +1,10 @@
 import { Hono } from "hono";
-import type { Env, LogEntry, Condition } from "../types.js";
+import type { Env, LogEntry, Condition, FailureNotification } from "../types.js";
 import type { KoboSubmission } from "../lib/kobo.js";
 import { isAllowedMediaHost } from "../lib/kobo.js";
 import { forwardSubmission } from "../lib/forward.js";
 import { resolveSubmissionId, editSubmission, resolveKoboEditToken, updateValidationStatus } from "../lib/koboEdit.js";
-import { geocodeSubmission } from "../lib/geocode.js";
+import { geocodeSubmission, geocodeAddress } from "../lib/geocode.js";
 import { callValidationAI } from "../lib/validateSubmission.js";
 import { renderPdf } from "../lib/pdfReport.js";
 import { getPayloadValue } from "../lib/submissionValue.js";
@@ -191,7 +191,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl: rawForwardUrl, forwardToken: rawForwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, server, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
+    const { forwardUrl: rawForwardUrl, forwardToken: rawForwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, geocodeAddressFields, server, emailNotification, validateSubmission, failureNotification, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       forwardToLogie?: boolean;
@@ -205,13 +205,15 @@ hook.post("/:formUID", async (c) => {
       editOriginal?: boolean;
       geocode?: boolean;
       geocodeField?: string;
+      geocodeAddressFields?: string[];
       server?: string;
       emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string }; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string }; condition?: Condition };
       validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition };
+      failureNotification?: FailureNotification;
       forwardCondition?: Condition;
       geocodeCondition?: Condition;
     };
-    if (rawForwardUrl || forwardToLogie || editOriginal || geocode || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
+    if (rawForwardUrl || forwardToLogie || editOriginal || geocode || (geocodeAddressFields && geocodeAddressFields.length > 0) || transcribe || extract || analyzeAudio || extractText || emailNotification || validateSubmission) {
       const submission = body as KoboSubmission;
 
       // Resolve effective forwarding target: LogIE (env vars) takes priority over custom URL
@@ -260,6 +262,8 @@ hook.post("/:formUID", async (c) => {
         (async () => {
           // ── Geocode coordinates → P-codes (runs first so result is included in forward payload) ──
           let geoFields: Record<string, string> = {};
+          let geocodeOk: boolean | undefined;
+          let geocodeError: string | undefined;
           if (geocode && evaluateCondition(geocodeCondition, submission as Record<string, unknown>)) {
             let geoLat = NaN, geoLon = NaN;
             if (geocodeField) {
@@ -276,18 +280,61 @@ hook.post("/:formUID", async (c) => {
               geoLon = typeof rawLon === "number" ? rawLon : typeof rawLon === "string" ? parseFloat(rawLon) : NaN;
             }
             if (!isNaN(geoLat) && !isNaN(geoLon)) {
-              const raw = await geocodeSubmission(geoLat, geoLon);
-              // Prefix each field with the geopoint question xpath:
-              //   _geo_adm0_pcode → obs/Location_geo_adm0_pcode
-              const prefix = geocodeField ?? "";
-              for (const [k, v] of Object.entries(raw)) {
-                geoFields[`${prefix}${k}`] = v;
+              try {
+                const raw = await geocodeSubmission(geoLat, geoLon);
+                // Prefix each field with the geopoint question xpath:
+                //   _geo_adm0_pcode → obs/Location_geo_adm0_pcode
+                const prefix = geocodeField ?? "";
+                for (const [k, v] of Object.entries(raw)) {
+                  geoFields[`${prefix}${k}`] = v;
+                }
+                geocodeOk = true;
+              } catch (err) {
+                console.error("[geocode] Error:", err);
+                geocodeOk = false;
+                geocodeError = String(err);
               }
+            } else {
+              geocodeOk = false;
+              geocodeError = "No valid coordinates found";
             }
           }
+          // ── Geocode address text fields → lat/lon + P-codes ──────────────
+          const geocodeAddressSteps: Record<string, import("../types.js").EnrichmentStepResult> = {};
+          const addressGeoFields: Record<string, string> = {};
+          if (geocodeAddressFields && geocodeAddressFields.length > 0) {
+            await Promise.all(
+              geocodeAddressFields.map(async (xpath) => {
+                const addressValue = (submission as Record<string, unknown>)[xpath];
+                if (typeof addressValue !== "string" || !addressValue.trim()) {
+                  geocodeAddressSteps[xpath] = { ok: false, error: "No address value found" };
+                  return;
+                }
+                try {
+                  const raw = await geocodeAddress(addressValue.trim());
+                  if (Object.keys(raw).length === 0) {
+                    geocodeAddressSteps[xpath] = { ok: false, error: "Address could not be geocoded" };
+                    return;
+                  }
+                  const writtenKeys: string[] = [];
+                  for (const [k, v] of Object.entries(raw)) {
+                    const prefixedKey = `${xpath}${k}`;
+                    addressGeoFields[prefixedKey] = v;
+                    writtenKeys.push(prefixedKey);
+                  }
+                  geocodeAddressSteps[xpath] = { ok: true, keys: writtenKeys };
+                } catch (err) {
+                  console.error(`[geocode-address] Error for "${xpath}":`, err);
+                  geocodeAddressSteps[xpath] = { ok: false, error: String(err) };
+                }
+              })
+            );
+          }
+
           // Merge geo fields into the forwarded payload
-          const enrichedPayload = Object.keys(geoFields).length > 0
-            ? { ...(jsonPayload ?? (submission as Record<string, unknown>)), ...geoFields }
+          const allGeoFields = { ...geoFields, ...addressGeoFields };
+          const enrichedPayload = Object.keys(allGeoFields).length > 0
+            ? { ...(jsonPayload ?? (submission as Record<string, unknown>)), ...allGeoFields }
             : jsonPayload;
 
           // ── Step 1: Forward submission (and/or enrich) ───────────────────
@@ -403,8 +450,8 @@ hook.post("/:formUID", async (c) => {
           }
 
           // ── Log ──────────────────────────────────────────────────────────
-          // Strip `enrichment` from the log entry — it's internal data only.
-          const { enrichment: _enrichment, ...fwdResultForLog } = fwdResult ?? { ok: true };
+          // Strip `enrichment` (large) and `steps` from the spread; add steps selectively.
+          const { enrichment: _enrichment, steps: fwdSteps, ...fwdResultForLog } = fwdResult ?? { ok: true };
           const logEntry: LogEntry = {
             ts: Date.now(),
             uuid: submission._uuid,
@@ -416,15 +463,45 @@ hook.post("/:formUID", async (c) => {
             ...(validateOk !== undefined ? { validateOk } : {}),
             ...(validateHttpStatus !== undefined ? { validateHttpStatus } : {}),
             ...(validateError !== undefined ? { validateError } : {}),
-
+            // Enrichment step results
+            ...(fwdSteps?.transcribe ? { transcribeSteps: fwdSteps.transcribe } : {}),
+            ...(fwdSteps?.analyzeAudio ? { analyzeAudioSteps: fwdSteps.analyzeAudio } : {}),
+            ...(fwdSteps?.extract ? { extractSteps: fwdSteps.extract } : {}),
+            ...(fwdSteps?.extractText ? { extractTextSteps: fwdSteps.extractText } : {}),
+            // Geocode
+            ...(geocodeOk !== undefined ? { geocodeOk } : {}),
+            ...(geocodeError !== undefined ? { geocodeError } : {}),
+            // Address geocoding
+            ...(Object.keys(geocodeAddressSteps).length > 0 ? { geocodeAddressSteps } : {}),
           };
-          await stub.fetch("https://do/log", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(logEntry),
-          });
 
-          // ── Step 6: Send email notification ──────────────────────────────
+          // ── Step 6: Send failure notification ────────────────────────────
+          if (!logEntry.ok && failureNotification && c.env.RESEND_API_KEY && c.env.RESEND_FROM_EMAIL) {
+            const uuid = submission._uuid ?? "unknown";
+            const subject = failureNotification.subject.replace(/\{\{_uuid\}\}/g, uuid);
+            const errorDetail = logEntry.error ?? (logEntry.httpStatus != null ? `HTTP ${logEntry.httpStatus}` : "Unknown error");
+            const bodyText = failureNotification.body
+              ? failureNotification.body.replace(/\{\{_uuid\}\}/g, uuid).replace(/\{\{error\}\}/g, errorDetail)
+              : errorDetail;
+            const htmlBody = '<div style="font-family:sans-serif;font-size:14px;color:#1a1a1a">'
+              + bodyText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
+              + "</div>";
+            try {
+              await sendResendEmail(
+                c.env.RESEND_API_KEY,
+                c.env.RESEND_FROM_EMAIL,
+                { to: failureNotification.to, ...(failureNotification.cc?.length ? { cc: failureNotification.cc } : {}), ...(failureNotification.bcc?.length ? { bcc: failureNotification.bcc } : {}), subject },
+                htmlBody,
+              );
+              logEntry.failureEmailOk = true;
+            } catch (err) {
+              console.error("[failure-email] Send failed:", err);
+              logEntry.failureEmailOk = false;
+              logEntry.failureEmailError = String(err);
+            }
+          }
+
+          // ── Step 8: Send email notification ──────────────────────────────
           if (emailNotification && evaluateCondition(emailNotification.condition, submission as Record<string, unknown>) && c.env.RESEND_API_KEY && c.env.RESEND_FROM_EMAIL) {
             // Merge enrichment (transcripts, AI descriptions) into the payload sent to the LLM
             const emailPayload: Record<string, unknown> = {
@@ -491,7 +568,7 @@ hook.post("/:formUID", async (c) => {
               const enrichedForPdf: Record<string, unknown> = {
                 ...(submission as Record<string, unknown>),
                 ...(fwdResult?.enrichment ?? {}),
-                ...geoFields,
+                ...allGeoFields,
               };
               const pdfServer = server ?? c.env.DEFAULT_KOBO_BASE_URL;
               const pdfToken = resolveKoboEditToken(pdfServer, {
@@ -513,20 +590,28 @@ hook.post("/:formUID", async (c) => {
             const recipients = resolveEmailRecipients(emailNotification, emailPayload);
             if (recipients.to.length === 0) {
               console.error("[email] Skipped send: no valid To recipients resolved from static emails or XPaths");
-              return;
+              logEntry.emailOk = false;
+              logEntry.emailError = "No valid To recipients resolved";
+            } else {
+              try {
+                await sendResendEmail(
+                  c.env.RESEND_API_KEY,
+                  c.env.RESEND_FROM_EMAIL,
+                  { ...recipients, subject },
+                  htmlBody,
+                  emailAttachments.length ? emailAttachments : undefined
+                );
+                logEntry.emailOk = true;
+              } catch (err) {
+                console.error("[email] Send failed:", err);
+                logEntry.emailOk = false;
+                logEntry.emailError = String(err);
+              }
             }
-
-            await sendResendEmail(
-              c.env.RESEND_API_KEY,
-              c.env.RESEND_FROM_EMAIL,
-              { ...recipients, subject },
-              htmlBody,
-              emailAttachments.length ? emailAttachments : undefined
-            );
           }
 
-          // ── Step 7: Write geocoded P-codes back to the original Kobo submission ──
-          if (Object.keys(geoFields).length > 0 && submission._uuid) {
+          // ── Step 9: Write geocoded fields back to the original Kobo submission ──
+          if (Object.keys(allGeoFields).length > 0 && submission._uuid) {
             const geoServer = server ?? c.env.DEFAULT_KOBO_BASE_URL;
             const koboToken = resolveKoboEditToken(geoServer, {
               global: c.env.KOBO_API_TOKEN_GLOBAL,
@@ -534,9 +619,16 @@ hook.post("/:formUID", async (c) => {
             });
             const submissionId = await resolveSubmissionId(geoServer, formUID, submission._uuid, koboToken);
             if (submissionId !== null) {
-              await editSubmission(geoServer, formUID, submissionId, geoFields, koboToken);
+              await editSubmission(geoServer, formUID, submissionId, allGeoFields, koboToken);
             }
           }
+
+          // ── Log (written last so email/geocode outcomes are included) ────
+          await stub.fetch("https://do/log", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(logEntry),
+          });
         })()
       );
     }

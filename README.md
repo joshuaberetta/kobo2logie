@@ -34,8 +34,12 @@ Transcribe audio attachments and then run structured field extraction against th
 ### Text field extraction
 Run AI-powered structured extraction on any free-text answer in the form. Useful for mining named entities, locations, organizations, or custom fields from open-ended responses.
 
-### Reverse geocoding
-Convert GPS coordinates (from a Kobo geopoint question or `_geolocation`) to ADM0–ADM4 administrative boundary P-codes and names using a self-hosted service backed by HDX/OCHA COD boundary data. Results (`_geo_adm0_pcode`, `_geo_adm0_name`, …, `_geo_adm4_pcode`, `_geo_adm4_name`) are injected into the forwarded payload and can be written back to Kobo. Conditional logic can gate geocoding independently of forwarding.
+### Geocoding
+Two geocoding modes are available, both backed by a self-hosted service using HDX/OCHA COD boundary data. Results are injected into the forwarded payload and written back to Kobo via edit-back.
+
+**Reverse geocoding** — convert GPS coordinates from a Kobo geopoint question (or the default `_geolocation` field) to ADM0–ADM4 P-codes and names. Output keys are prefixed with the geopoint question xpath, e.g. `location_geo_adm1_pcode`.
+
+**Address geocoding** — resolve a free-text address answer to coordinates (`_geo_latitude`, `_geo_longitude`) plus ADM0–ADM4 P-codes and names. Any number of text questions can be enabled. Output keys are prefixed with the question xpath, e.g. `address_geo_latitude`, `address_geo_adm1_name`. Conditional logic can gate geocoding independently of forwarding.
 
 ### Edit-back to Kobo
 Write any enriched values (transcripts, extracted fields, geocoded P-codes, static appended values) back to the original Kobo submission via the Kobo bulk-edit API. This makes enriched data visible inside the Kobo data table without any separate sync step.

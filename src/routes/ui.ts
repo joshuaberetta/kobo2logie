@@ -548,6 +548,14 @@ ui.get("/:uid", (c) => {
             </div>
             <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Send an email via Resend on every new submission. Requires <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">RESEND_API_KEY</code> to be set as a Worker secret. Use <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{_uuid}}</code>, <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{field_name}}</code> as placeholders in subject and body.</p>
           </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+              <label class="checkbox-row"><input type="checkbox" id="failure-notification-enabled" autocomplete="off" /><span>Failure notifications</span></label>
+              <button type="button" class="select-btn" id="failure-configure-btn" style="display:none" onclick="openFailureModal()">Configure&hellip;</button>
+            </div>
+            <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Send an alert email when a submission fails to forward. Requires <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">RESEND_API_KEY</code>. Use <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{_uuid}}</code> and <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">{{error}}</code> as placeholders.</p>
+          </div>
         </div>
 
       </div>
@@ -723,6 +731,44 @@ ui.get("/:uid", (c) => {
     </div>
   </div>
 
+  <div class="modal-overlay" id="failure-modal" onclick="closeFailureOverlay(event)">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <span class="modal-title">Failure notification settings</span>
+        <button type="button" class="modal-close" onclick="closeFailureModal(false)">&times;</button>
+      </div>
+      <div class="modal-body" style="gap:.9rem">
+        <div>
+          <label for="failure-to" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">To <span style="color:#dc2626">*</span></label>
+          <input id="failure-to" type="text" placeholder="alerts@example.com, another@example.com" autocomplete="off" spellcheck="false" />
+          <div style="font-size:.75rem;font-weight:400;color:#9ca3af;margin-top:.25rem">comma-separated emails</div>
+        </div>
+        <div>
+          <label for="failure-cc" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">CC</label>
+          <input id="failure-cc" type="text" placeholder="cc@example.com" autocomplete="off" spellcheck="false" />
+          <div style="font-size:.75rem;font-weight:400;color:#9ca3af;margin-top:.25rem">comma-separated emails, optional</div>
+        </div>
+        <div>
+          <label for="failure-bcc" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">BCC</label>
+          <input id="failure-bcc" type="text" placeholder="bcc@example.com" autocomplete="off" spellcheck="false" />
+          <div style="font-size:.75rem;font-weight:400;color:#9ca3af;margin-top:.25rem">comma-separated emails, optional</div>
+        </div>
+        <div>
+          <label for="failure-subject" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Subject <span style="color:#dc2626">*</span><span class="label-hint">use {{_uuid}} and {{error}} as placeholders</span></label>
+          <input id="failure-subject" type="text" placeholder="Submission forwarding failed: {{_uuid}}" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label for="failure-body" style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.4rem;display:block">Body<span class="label-hint">use {{_uuid}} and {{error}} as placeholders</span></label>
+          <textarea id="failure-body" rows="5" placeholder="A submission failed to forward."></textarea>
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
+          <button type="button" class="select-btn" onclick="closeFailureModal(false)">Cancel</button>
+          <button type="button" class="save-btn" style="width:auto;padding:.45rem 1rem" onclick="saveFailureModal()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="validate-modal" onclick="closeValidateOverlay(event)">
     <div class="modal" style="max-width:520px">
       <div class="modal-header">
@@ -797,12 +843,15 @@ ui.get("/:uid", (c) => {
     let configExtractQs = [];    // persisted extract xpath list
     let configAnalyzeAudioQs = []; // persisted analyzeAudio xpath list
     let configExtractTextQs = []; // persisted extractText xpath list
+    let configGeocodeAddressQs = []; // persisted geocodeAddressFields xpath list
 
     // Per-question analysis prompts (type → xpath → {description?: string, fields: [{key, instruction}]})
     const questionPrompts = { extract: {}, analyzeAudio: {}, extractText: {} };
 
     // Email notification config (null = disabled)
     let emailNotificationConfig = null;
+    // Failure notification config (null = disabled)
+    let failureNotificationConfig = null;
     // Validate submission config (null = disabled)
     let validateConfig = null;
 
@@ -1005,9 +1054,11 @@ ui.get("/:uid", (c) => {
           const tPressed = configExtractTextQs.includes(q.xpath) ? 'true' : 'false';
           const tFields = questionPrompts.extractText[q.xpath];
           const tHasPrompt = !!(tFields && (tFields.description || (Array.isArray(tFields.fields) && tFields.fields.length > 0)));
+          const gaPressed = configGeocodeAddressQs.includes(q.xpath) ? 'true' : 'false';
           pills = '<div class="q-pills">' +
             '<button type="button" class="q-pill" aria-pressed="' + tPressed + '" data-feature="analyze" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '">' + SPARKLE_SVG + ' Analyze</button>' +
             '<button type="button" class="q-prompt-btn' + (tHasPrompt ? ' has-prompt' : '') + '" data-feature="prompt" data-type="extractText" data-xpath="' + escHtml(q.xpath) + '" title="' + (tHasPrompt ? 'Edit instructions (set)' : 'Add instructions') + '">\u270e</button>' +
+            '<button type="button" class="q-pill" aria-pressed="' + gaPressed + '" data-feature="geocode-address" data-xpath="' + escHtml(q.xpath) + '">&#x1F4CD; Geocode</button>' +
             '</div>';
         } else if (q.type === 'geopoint') {
           badge = '<span class="q-badge q-badge--geo">GEO</span>';
@@ -1043,6 +1094,10 @@ ui.get("/:uid", (c) => {
 
     function getSelectedExtractTextQs() {
       return Array.from(document.querySelectorAll('#fields-list .q-pill[data-feature="analyze"][data-type="extractText"][aria-pressed="true"]')).map(b => b.dataset.xpath);
+    }
+
+    function getSelectedGeocodeAddressQs() {
+      return Array.from(document.querySelectorAll('#fields-list .q-pill[data-feature="geocode-address"][aria-pressed="true"]')).map(b => b.dataset.xpath);
     }
 
     // ── Per-question prompt modal ─────────────────────────────────────────────
@@ -1132,6 +1187,59 @@ ui.get("/:uid", (c) => {
     function closeEmailOverlay(e) {
       if (e && e.target !== document.getElementById('email-modal')) return;
       closeEmailModal(false);
+    }
+
+    function closeFailureOverlay(e) {
+      if (e && e.target !== document.getElementById('failure-modal')) return;
+      closeFailureModal(false);
+    }
+
+    document.getElementById('failure-notification-enabled').addEventListener('change', function() {
+      if (this.checked) {
+        openFailureModal();
+      } else {
+        failureNotificationConfig = null;
+        document.getElementById('failure-configure-btn').style.display = 'none';
+        markDirty();
+      }
+    });
+
+    function openFailureModal() {
+      var cfg = failureNotificationConfig || {};
+      var parseCsv = function(s) { return s ? s.join(', ') : ''; };
+      document.getElementById('failure-to').value = parseCsv(cfg.to);
+      document.getElementById('failure-cc').value = parseCsv(cfg.cc);
+      document.getElementById('failure-bcc').value = parseCsv(cfg.bcc);
+      document.getElementById('failure-subject').value = cfg.subject || 'Submission forwarding failed: {{_uuid}}';
+      document.getElementById('failure-body').value = cfg.body || 'A submission failed to forward.\\n\\nUUID: {{_uuid}}\\nError: {{error}}';
+      document.getElementById('failure-modal').classList.add('open');
+    }
+
+    function closeFailureModal(saved) {
+      document.getElementById('failure-modal').classList.remove('open');
+      if (!saved && !failureNotificationConfig) {
+        document.getElementById('failure-notification-enabled').checked = false;
+      }
+    }
+
+    function saveFailureModal() {
+      var parseCsv = function(s) { return s.split(',').map(function(e) { return e.trim(); }).filter(Boolean); };
+      var to = parseCsv(document.getElementById('failure-to').value);
+      var cc = parseCsv(document.getElementById('failure-cc').value);
+      var bcc = parseCsv(document.getElementById('failure-bcc').value);
+      var subject = document.getElementById('failure-subject').value.trim();
+      var body = document.getElementById('failure-body').value.trim();
+      if (!to.length || !subject) {
+        alert('Subject is required, and To must include at least one email.');
+        return;
+      }
+      failureNotificationConfig = { to, subject, body };
+      if (cc.length) failureNotificationConfig.cc = cc;
+      if (bcc.length) failureNotificationConfig.bcc = bcc;
+      document.getElementById('failure-modal').classList.remove('open');
+      document.getElementById('failure-notification-enabled').checked = true;
+      document.getElementById('failure-configure-btn').style.display = '';
+      markDirty();
     }
 
     function closeValidateOverlay(e) {
@@ -1378,6 +1486,10 @@ ui.get("/:uid", (c) => {
           geocodeXpath = (geocodeXpath === xpath) ? null : xpath;
           renderFieldsList();
           markDirty();
+        } else if (feature === 'geocode-address') {
+          const pressed = target.getAttribute('aria-pressed') === 'true';
+          target.setAttribute('aria-pressed', String(!pressed));
+          markDirty();
         }
       }
       // Prompt button
@@ -1489,6 +1601,7 @@ ui.get("/:uid", (c) => {
         }
         document.getElementById('edit-original').checked = !!data.editOriginal;
         geocodeXpath = data.geocodeField || null;
+        configGeocodeAddressQs = Array.isArray(data.geocodeAddressFields) ? data.geocodeAddressFields : [];
         renderKVEditor(Array.isArray(data.appendValues) ? data.appendValues : []);
         if (data.validateSubmission) {
           validateConfig = data.validateSubmission;
@@ -1499,6 +1612,11 @@ ui.get("/:uid", (c) => {
           emailNotificationConfig = data.emailNotification;
           document.getElementById('email-notification-enabled').checked = true;
           document.getElementById('email-configure-btn').style.display = '';
+        }
+        if (data.failureNotification) {
+          failureNotificationConfig = data.failureNotification;
+          document.getElementById('failure-notification-enabled').checked = true;
+          document.getElementById('failure-configure-btn').style.display = '';
         }
         if (data.forwardCondition) {
           condSetCondition('forward', data.forwardCondition);
@@ -1548,6 +1666,7 @@ ui.get("/:uid", (c) => {
       const extractText = selectedExtractText.length > 0
         ? { questions: selectedExtractText, ...(Object.keys(extractTextPrompts).length > 0 ? { prompts: extractTextPrompts } : {}) }
         : null;
+      const geocodeAddressFields = getSelectedGeocodeAddressQs();
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
       setStatus('', '');
@@ -1555,7 +1674,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, forwardToLogie: document.getElementById('forward-to-logie').checked, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, forwardCondition: getCondition('forward') }),
+          body: JSON.stringify({ forwardUrl, forwardToken, forwardToLogie: document.getElementById('forward-to-logie').checked, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, geocodeAddressFields, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, failureNotification: document.getElementById('failure-notification-enabled').checked && failureNotificationConfig ? failureNotificationConfig : null, forwardCondition: getCondition('forward') }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');
@@ -1622,6 +1741,44 @@ ui.get("/:uid", (c) => {
         if (e.validateHttpStatus != null) rows += '<div class="modal-row"><span class="modal-label">Validate HTTP</span><span class="modal-value">HTTP ' + escHtml(String(e.validateHttpStatus)) + '</span></div>';
         if (e.validateError) rows += '<div class="modal-row"><span class="modal-label">Validate error</span><pre class="modal-pre">' + escHtml(e.validateError) + '</pre></div>';
       }
+      if (e.geocodeOk !== undefined) {
+        rows += '<div class="modal-row"><span class="modal-label">Geocode</span><span class="modal-value">' + (e.geocodeOk ? '\u2713 P-codes resolved' : '\u2717 Failed') + '</span></div>';
+        if (e.geocodeError) rows += '<div class="modal-row"><span class="modal-label">Geocode error</span><pre class="modal-pre">' + escHtml(e.geocodeError) + '</pre></div>';
+      }
+      if (e.emailOk !== undefined) {
+        rows += '<div class="modal-row"><span class="modal-label">Email notification</span><span class="modal-value">' + (e.emailOk ? '\u2713 Sent' : '\u2717 Failed') + '</span></div>';
+        if (e.emailError) rows += '<div class="modal-row"><span class="modal-label">Email error</span><pre class="modal-pre">' + escHtml(e.emailError) + '</pre></div>';
+      }
+      if (e.failureEmailOk !== undefined) {
+        rows += '<div class="modal-row"><span class="modal-label">Failure notification</span><span class="modal-value">' + (e.failureEmailOk ? '\u2713 Sent' : '\u2717 Failed') + '</span></div>';
+        if (e.failureEmailError) rows += '<div class="modal-row"><span class="modal-label">Failure email error</span><pre class="modal-pre">' + escHtml(e.failureEmailError) + '</pre></div>';
+      }
+      // \u2500\u2500 Enrichment steps \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+      var renderStepGroup = function(label, stepMap) {
+        if (!stepMap || Object.keys(stepMap).length === 0) return '';
+        var out = '<div style="margin-top:.75rem"><span class="modal-label" style="display:block;margin-bottom:.35rem">' + escHtml(label) + '</span>';
+        for (var xpath in stepMap) {
+          var s = stepMap[xpath];
+          var icon = s.ok ? '\u2713' : '\u2717';
+          var color = s.ok ? '#15803d' : '#dc2626';
+          out += '<div style="display:flex;gap:.5rem;align-items:baseline;padding:.15rem 0;padding-left:.75rem">';
+          out += '<span style="font-weight:700;color:' + color + ';flex-shrink:0">' + icon + '</span>';
+          out += '<span style="font-size:.8rem;color:#d1d5db;word-break:break-all">' + escHtml(xpath) + '</span>';
+          if (s.ok && s.keys && s.keys.length > 0) {
+            out += '<span style="font-size:.75rem;color:#6b7280;margin-left:.25rem">\u2192 ' + escHtml(s.keys.join(', ')) + '</span>';
+          } else if (!s.ok && s.error) {
+            out += '<span style="font-size:.75rem;color:#dc2626;margin-left:.25rem">' + escHtml(s.error) + '</span>';
+          }
+          out += '</div>';
+        }
+        out += '</div>';
+        return out;
+      };
+      rows += renderStepGroup('Transcription', e.transcribeSteps);
+      rows += renderStepGroup('Audio analysis', e.analyzeAudioSteps);
+      rows += renderStepGroup('Image extraction', e.extractSteps);
+      rows += renderStepGroup('Text extraction', e.extractTextSteps);
+      rows += renderStepGroup('Address geocoding', e.geocodeAddressSteps);
       document.getElementById('modal-title').textContent = e.ok ? '\u2713 Submission forwarded' : '\u2717 Forwarding failed';
       document.getElementById('modal-body').innerHTML = rows;
       document.getElementById('log-modal').classList.add('open');

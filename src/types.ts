@@ -33,6 +33,12 @@ export type Condition = ConditionGroup;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface EnrichmentStepResult {
+  ok: boolean;
+  error?: string;
+  keys?: string[]; // enrichment keys written (e.g. ["obs/observation_transcript"])
+}
+
 export interface LogEntry {
   ts: number;          // Unix ms timestamp
   uuid?: string;       // submission _uuid
@@ -49,6 +55,30 @@ export interface LogEntry {
   validateError?: string;      // error message if validation failed
   pdfOk?: boolean;             // true = PDF generated and emailed, false = failed, absent = not attempted
   pdfError?: string;           // error message if PDF step failed
+  // Enrichment steps (absent = step not configured / not attempted)
+  transcribeSteps?: Record<string, EnrichmentStepResult>;
+  analyzeAudioSteps?: Record<string, EnrichmentStepResult>;
+  extractSteps?: Record<string, EnrichmentStepResult>;
+  extractTextSteps?: Record<string, EnrichmentStepResult>;
+  // Geocoding (geopoint field → reverse geocode)
+  geocodeOk?: boolean;
+  geocodeError?: string;
+  // Address geocoding (text fields → forward geocode)
+  geocodeAddressSteps?: Record<string, EnrichmentStepResult>;
+  // Email notification
+  emailOk?: boolean;
+  emailError?: string;
+  // Failure notification
+  failureEmailOk?: boolean;
+  failureEmailError?: string;
+}
+
+export interface FailureNotification {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
 }
 
 export interface Env {

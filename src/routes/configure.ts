@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, Condition, ConditionGroup } from "../types.js";
+import type { Env, Condition, ConditionGroup, FailureNotification } from "../types.js";
 
 const configure = new Hono<{ Bindings: Env }>();
 
@@ -216,8 +216,10 @@ configure.get("/project/:uid", async (c) => {
         editOriginal?: boolean;
         geocode?: boolean;
         geocodeField?: string;
+        geocodeAddressFields?: string[];
         emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string }; condition?: Condition };
         validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition };
+        failureNotification?: FailureNotification;
         forwardCondition?: Condition;
         geocodeCondition?: Condition;
       })
@@ -237,8 +239,10 @@ configure.get("/project/:uid", async (c) => {
     editOriginal: config.editOriginal ?? false,
     geocode: config.geocode ?? false,
     geocodeField: config.geocodeField ?? "",
+    geocodeAddressFields: config.geocodeAddressFields ?? [],
     emailNotification: config.emailNotification ?? null,
     validateSubmission: config.validateSubmission ?? null,
+    failureNotification: config.failureNotification ?? null,
     forwardCondition: config.forwardCondition ?? null,
     geocodeCondition: config.geocodeCondition ?? null,
   });
@@ -248,7 +252,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, emailNotification, validateSubmission, forwardCondition, geocodeCondition } = await c.req.json<{
+  const { forwardUrl, forwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, geocodeAddressFields, emailNotification, validateSubmission, failureNotification, forwardCondition, geocodeCondition } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     forwardToLogie?: boolean;
@@ -262,8 +266,10 @@ configure.post("/project/:uid", async (c) => {
     editOriginal?: boolean;
     geocode?: boolean;
     geocodeField?: string;
+    geocodeAddressFields?: string[];
     emailNotification?: { to: string[]; toXPaths?: string[]; cc?: string[]; ccXPaths?: string[]; bcc?: string[]; bccXPaths?: string[]; subject: string; body?: string; aiBody?: { instructions: string } | null; attachments?: string[]; pdfReport?: { template?: string; formTitle?: string }; condition?: Condition } | null;
     validateSubmission?: { instructions: string; includeReasoning: boolean; options: { approved: string; notApproved: string; onHold: string }; condition?: Condition } | null;
+    failureNotification?: { to: string[]; cc?: string[]; bcc?: string[]; subject: string; body: string } | null;
     forwardCondition?: Condition | null;
     geocodeCondition?: Condition | null;
   }>();
@@ -499,7 +505,33 @@ configure.post("/project/:uid", async (c) => {
     };
   }
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && !geocode && safeEmailNotification === undefined && safeValidateSubmission === undefined) {
+  let safeFailureNotification: FailureNotification | undefined;
+  if (failureNotification != null) {
+    const { to, cc, bcc, subject, body } = failureNotification;
+    const safeTo = Array.isArray(to) ? (to as unknown[]).map((e) => String(e).trim()).filter(Boolean) : [];
+    if (safeTo.length === 0) {
+      return c.json({ error: "failureNotification requires at least one To email" }, 400);
+    }
+    const safeSubject = String(subject ?? "").trim();
+    if (!safeSubject) {
+      return c.json({ error: "failureNotification.subject is required" }, 400);
+    }
+    const safeCc = Array.isArray(cc) ? (cc as unknown[]).map((e) => String(e).trim()).filter(Boolean) : undefined;
+    const safeBcc = Array.isArray(bcc) ? (bcc as unknown[]).map((e) => String(e).trim()).filter(Boolean) : undefined;
+    safeFailureNotification = {
+      to: safeTo,
+      ...(safeCc?.length ? { cc: safeCc } : {}),
+      ...(safeBcc?.length ? { bcc: safeBcc } : {}),
+      subject: safeSubject,
+      body: String(body ?? "").trim(),
+    };
+  }
+
+  const safeGeocodeAddressFields = Array.isArray(geocodeAddressFields)
+    ? geocodeAddressFields.map((f) => String(f).trim()).filter(Boolean)
+    : [];
+
+  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && !geocode && safeGeocodeAddressFields.length === 0 && safeEmailNotification === undefined && safeValidateSubmission === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -565,6 +597,12 @@ configure.post("/project/:uid", async (c) => {
     } else if (safeValidateSubmission !== undefined) {
       next.validateSubmission = safeValidateSubmission;
     }
+    // failureNotification: null means "clear", undefined means "don't touch"
+    if (failureNotification === null) {
+      delete next.failureNotification;
+    } else if (safeFailureNotification !== undefined) {
+      next.failureNotification = safeFailureNotification;
+    }
     // geocode: always written (boolean, defaults to false)
     next.geocode = geocode === true;
     // geocodeField: empty string = clear (use _geolocation default)
@@ -572,6 +610,12 @@ configure.post("/project/:uid", async (c) => {
       next.geocodeField = geocodeField.trim();
     } else {
       delete next.geocodeField;
+    }
+    // geocodeAddressFields: empty array = clear
+    if (safeGeocodeAddressFields.length > 0) {
+      next.geocodeAddressFields = safeGeocodeAddressFields;
+    } else {
+      delete next.geocodeAddressFields;
     }
     // forwardCondition: null = clear, undefined = don't touch, object = set
     if (forwardCondition === null) {
