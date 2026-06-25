@@ -3,8 +3,16 @@ dist/
 .wrangler/
 
 *.env
+.env
 .env.*
 !.env.example
 .dev.vars
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3
+staticfiles/
 
 poc_template/
