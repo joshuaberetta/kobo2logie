@@ -6,3 +6,5 @@ dist/
 .env.*
 !.env.example
 .dev.vars
+
+poc_template/
