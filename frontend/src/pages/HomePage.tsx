@@ -1,7 +1,5 @@
 import {
   Alert,
-  Avatar,
-  Badge,
   Box,
   Button,
   Center,
@@ -14,15 +12,18 @@ import {
   Title,
 } from '@mantine/core'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { type User, api } from '../api/client'
 
 export function HomePage() {
+  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  const [formUid, setFormUid] = useState('')
 
   useEffect(() => {
     api.auth
@@ -40,7 +41,6 @@ export function HomePage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
-
     try {
       const res = await api.auth.login(username, password)
       setUser(res.user)
@@ -65,91 +65,105 @@ export function HomePage() {
     }
   }
 
+  const handleOpen = (e: React.FormEvent) => {
+    e.preventDefault()
+    const uid = formUid.trim()
+    if (uid) navigate(`/${uid}`)
+  }
+
   if (checkingAuth) {
     return (
-      <Center mih="100vh" bg="gray.8">
-        <Text c="gray.2">Loading...</Text>
+      <Center mih='100vh' bg='gray.9'>
+        <Text c='gray.4'>Loading…</Text>
       </Center>
     )
   }
 
   return (
-    <Box mih="100vh" bg="gray.8" display="flex" flex={1} style={{ flexDirection: 'column' }}>
-      {/* Main content */}
-      <Center flex={1} p="xl">
-        <Container size="xs" w="100%">
+    <Box mih='100vh' bg='gray.9' display='flex' flex={1} style={{ flexDirection: 'column' }}>
+      <Center flex={1} p='xl'>
+        <Container size='xs' w='100%'>
           {user ? (
-            <Stack align="center" gap="lg">
-              <Avatar size="xl" radius="xl" color="blue">
-                {user.username.charAt(0).toUpperCase()}
-              </Avatar>
-              <Box ta="center">
-                <Title order={3} mb="xs">
-                  Welcome back
+            <Stack gap='lg'>
+              <Stack align='center' gap='xs'>
+                <Image
+                  src='/KoboToolbox_logo_white.svg'
+                  alt='KoboToolbox'
+                  mah={28}
+                  maw={160}
+                  fit='contain'
+                />
+                <Title order={4} c='white'>
+                  LogIE
                 </Title>
-                <Text size="lg" fw={600} c="blue.6">
-                  {user.username}
+                <Text size='xs' c='dimmed'>
+                  Signed in as <strong>{user.username}</strong>
                 </Text>
-                {user.email && (
-                  <Text size="sm" c="gray.3" mt="xs">
-                    {user.email}
-                  </Text>
-                )}
-              </Box>
+              </Stack>
+
+              <form onSubmit={handleOpen}>
+                <Stack gap='sm'>
+                  <TextInput
+                    label='Form UID'
+                    placeholder='aXXXXXXXXXXXXXXXXXXXXXX'
+                    value={formUid}
+                    onChange={(e) => setFormUid(e.target.value)}
+                    size='md'
+                    description='Paste the KoboToolbox asset UID to open its LogIE configuration'
+                  />
+                  <Button type='submit' fullWidth size='md' disabled={!formUid.trim()}>
+                    Open form
+                  </Button>
+                </Stack>
+              </form>
+
+              {error && <Alert color='red'>{error}</Alert>}
+
               <Button
-                variant="danger-secondary"
+                variant='transparent'
+                color='gray'
+                size='xs'
                 onClick={handleLogout}
                 loading={loading}
-                fullWidth
-                size="md"
               >
                 Sign out
               </Button>
             </Stack>
           ) : (
-            <Stack align="center" gap="xl">
-              {/* Server badge */}
-              <Badge size="lg" radius="xl" color="blue" variant="light">
-                POC App Template
-              </Badge>
-
-              {/* Logo */}
+            <Stack align='center' gap='xl'>
               <Image
-                src="/KoboToolbox_logo_dark.svg"
-                alt="KoboToolbox"
+                src='/KoboToolbox_logo_white.svg'
+                alt='KoboToolbox'
                 mah={32}
                 maw={180}
-                fit="contain"
+                fit='contain'
               />
-
-              {/* Title */}
-              <Title order={2} ta="center">
-                Log in to your account
+              <Title order={2} ta='center' c='white'>
+                LogIE
               </Title>
+              <Text size='sm' c='dimmed' ta='center'>
+                KoboToolbox submission pipeline
+              </Text>
 
-              {/* Form */}
-              <Box w="100%">
+              <Box w='100%'>
                 <form onSubmit={handleLogin}>
-                  <Stack gap="md">
-                    {error && <Alert type="error">{error}</Alert>}
-
+                  <Stack gap='md'>
+                    {error && <Alert color='red'>{error}</Alert>}
                     <TextInput
-                      label="Username"
+                      label='Username'
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       required
-                      size="md"
+                      size='md'
                     />
-
                     <PasswordInput
-                      label="Password"
+                      label='Password'
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      size="md"
+                      size='md'
                     />
-
-                    <Button type="submit" loading={loading} fullWidth size="md" mt="sm">
+                    <Button type='submit' loading={loading} fullWidth size='md' mt='sm'>
                       Log in
                     </Button>
                   </Stack>
