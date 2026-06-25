@@ -10,9 +10,6 @@ Built with [Hono](https://hono.dev/) on Cloudflare Workers + Durable Objects.
 
 kobo2logie sits between KoboToolbox and the rest of your data pipeline. When a form is submitted on Kobo, the JSON payload is POSTed to this worker, which then runs any combination of the following steps — all configurable per form through the browser UI:
 
-### Real-time submission viewer
-Every incoming submission is instantly pushed over WebSocket to any open browser tabs viewing that form's dashboard. The viewer shows a live submission list, a JSON detail panel, and an image grid for photo attachments. Up to 50 submissions are buffered in memory per form (cleared 60 seconds after the last tab closes).
-
 ### Field filtering
 Optionally forward only a selected subset of form fields. `_uuid` is always included regardless. If none of the configured fields match, the full payload is forwarded as a fallback.
 

@@ -40,6 +40,16 @@ ui.get("/", (c) => {
     .token-notes ul { margin: .15rem 0 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
     .token-notes code { font-family: monospace; background: #eff6ff; padding: .05em .3em; border-radius: 3px; font-size: .92em; }
     .exists-banner { background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: .65rem .9rem; font-size: .85rem; color: #15803d; display: none; }
+    .exists-banner-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .recreate-link { background: none; border: none; font-size: .8rem; font-weight: 600; color: #15803d; text-decoration: underline; cursor: pointer; padding: 0; flex-shrink: 0; }
+    .recreate-link:hover { color: #14532d; }
+    .recreate-panel { margin-top: .65rem; padding-top: .65rem; border-top: 1px solid #bbf7d0; display: none; flex-direction: column; gap: .5rem; }
+    .recreate-panel input { border-color: #bbf7d0; background: #fff; }
+    .recreate-panel input:focus { border-color: #16a34a; }
+    .recreate-btn { padding: .4rem .85rem; background: #16a34a; color: #fff; border: none; border-radius: 7px; font-size: .82rem; font-weight: 600; cursor: pointer; align-self: flex-start; }
+    .recreate-btn:hover { background: #15803d; }
+    .recreate-btn:disabled { background: #86efac; cursor: not-allowed; }
+    .recreate-status { font-size: .8rem; min-height: 1rem; }
   </style>
 </head>
 <body>
@@ -72,7 +82,18 @@ ui.get("/", (c) => {
         </div>
       </div>
       <div class="exists-banner" id="exists-banner">
-        &#10003; A configuration already exists for this project.
+        <div class="exists-banner-row">
+          <span>&#10003; A configuration already exists for this project.</span>
+          <button type="button" class="recreate-link" onclick="toggleRecreatePanel()">Recreate REST service</button>
+        </div>
+        <div class="recreate-panel" id="recreate-panel">
+          <label for="recreate-token" style="color:#374151;margin-bottom:.2rem">API Token</label>
+          <input id="recreate-token" type="password" placeholder="your KoboToolbox API token" autocomplete="off" />
+          <div style="display:flex;align-items:center;gap:.75rem">
+            <button type="button" class="recreate-btn" id="recreate-btn" onclick="recreateRestService()">Register now</button>
+            <span class="recreate-status" id="recreate-status"></span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -104,6 +125,9 @@ ui.get("/", (c) => {
       document.getElementById('setup-btn').textContent = exists ? 'Go to project \u2192' : 'Set up integration';
       document.getElementById('results').style.display = 'none';
       document.getElementById('continue-btn').style.display = 'none';
+      document.getElementById('recreate-panel').style.display = 'none';
+      document.getElementById('recreate-token').value = '';
+      document.getElementById('recreate-status').textContent = '';
     }
 
     async function checkConfig(uid) {
@@ -114,6 +138,10 @@ ui.get("/", (c) => {
           const data = await res.json();
           // The endpoint always returns 200 with defaults; treat it as existing only if
           // 'server' is non-empty (written during the rest-service setup step)
+          if (data && data.server) {
+            const sel = document.getElementById('server');
+            if ([...sel.options].some(o => o.value === data.server)) sel.value = data.server;
+          }
           updateRootState(!!(data && data.server), true);
         } else {
           updateRootState(false, true);
@@ -153,6 +181,46 @@ ui.get("/", (c) => {
     function goToProject() {
       const uid = document.getElementById('uid').value.trim();
       if (uid) window.location.href = '/' + uid;
+    }
+
+    function toggleRecreatePanel() {
+      const panel = document.getElementById('recreate-panel');
+      const open = panel.style.display === 'flex';
+      panel.style.display = open ? 'none' : 'flex';
+      if (!open) document.getElementById('recreate-token').focus();
+    }
+
+    async function recreateRestService() {
+      const server = document.getElementById('server').value;
+      const uid = document.getElementById('uid').value.trim();
+      const token = document.getElementById('recreate-token').value.trim();
+      const statusEl = document.getElementById('recreate-status');
+      const btn = document.getElementById('recreate-btn');
+      if (!token) { statusEl.style.color = '#dc2626'; statusEl.textContent = 'API token required.'; return; }
+      btn.disabled = true;
+      statusEl.style.color = '#6b7280';
+      statusEl.textContent = 'Registering…';
+      try {
+        const res = await fetch('/api/configure/rest-service', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server, uid, token }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          statusEl.style.color = '#15803d';
+          statusEl.textContent = data.already_exists ? '✓ Already registered' : '✓ Registered: ' + (data.endpoint ?? '');
+        } else {
+          const text = await res.text();
+          statusEl.style.color = '#dc2626';
+          statusEl.textContent = 'Error ' + res.status + ': ' + text.slice(0, 200);
+        }
+      } catch (e) {
+        statusEl.style.color = '#dc2626';
+        statusEl.textContent = 'Network error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function setupIntegration() {
