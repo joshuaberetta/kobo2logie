@@ -74,20 +74,6 @@ def _write_log(uid: str, uuid: str, submission_id, data: dict) -> None:
         SubmissionLog.objects.filter(id__in=overflow_ids).delete()
 
 
-def _push_to_channel(uid: str, submission: dict) -> None:
-    from channels.layers import get_channel_layer
-    from asgiref.sync import async_to_sync
-    layer = get_channel_layer()
-    if layer:
-        try:
-            async_to_sync(layer.group_send)(
-                f'form_{uid}',
-                {'type': 'submission.push', 'data': json.dumps(submission)},
-            )
-        except Exception as exc:
-            logger.error('[ws] Failed to push to channel for %s: %s', uid, exc)
-
-
 def _is_valid_condition(c) -> bool:
     if not isinstance(c, dict):
         return False
@@ -514,8 +500,6 @@ def hook(request, uid):
     if not isinstance(body, dict):
         return Response('Expected a JSON object', status=status.HTTP_400_BAD_REQUEST)
 
-    _push_to_channel(uid, body)
-
     config = _get_config(uid)
     if config and (
         config.get('forwardUrl') or config.get('forwardToLogie') or
@@ -593,7 +577,6 @@ def retry(request, uid):
         return Response({'error': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
     submission = results[0]
-    _push_to_channel(uid, submission)
     if config:
         threading.Thread(target=_run_pipeline, args=(uid, submission, config), daemon=True).start()
     return Response({'ok': True})

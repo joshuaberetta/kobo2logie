@@ -2,7 +2,6 @@ import {
   ActionIcon,
   Badge,
   Box,
-  Button,
   Group,
   Loader,
   Pagination,
@@ -11,16 +10,11 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { LogEntry } from '../types'
 import { SubmissionDetailModal } from './SubmissionDetailModal'
-
-const WS_BASE = (() => {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${proto}://${window.location.host}`
-})()
 
 function StatusBadge({ ok }: { ok: boolean }) {
   return (
@@ -56,49 +50,14 @@ export function LogsSection({ uid }: LogsSectionProps) {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<LogEntry | null>(null)
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting')
-  const [liveEntries, setLiveEntries] = useState<LogEntry[]>([])
-  const wsRef = useRef<WebSocket | null>(null)
 
   const PAGE_SIZE = 20
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ['logs', uid, page],
     queryFn: () => api.logs.list(uid, page, PAGE_SIZE),
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
   })
-
-  // WebSocket connection
-  useEffect(() => {
-    const ws = new WebSocket(`${WS_BASE}/ws/stream/${uid}/`)
-    wsRef.current = ws
-    setWsStatus('connecting')
-
-    ws.onopen = () => setWsStatus('open')
-    ws.onclose = () => setWsStatus('closed')
-    ws.onerror = () => setWsStatus('closed')
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { type: 'log' | 'submission'; data: unknown }
-        if (msg.type === 'submission' || msg.type === 'log') {
-          const entry = msg.data as LogEntry
-          setLiveEntries((prev) => {
-            // dedupe by uuid then trim to 50
-            const exists = prev.some((e) => e.uuid && e.uuid === entry.uuid && e.ts === entry.ts)
-            if (exists) return prev
-            return [entry, ...prev].slice(0, 50)
-          })
-          // Invalidate page 1 so the list refreshes
-          queryClient.invalidateQueries({ queryKey: ['logs', uid, 1] })
-        }
-      } catch (_) {}
-    }
-
-    return () => {
-      ws.close()
-    }
-  }, [uid, queryClient])
 
   const { mutate: retry, isPending: retrying, variables: retryingUuid } = useMutation({
     mutationFn: (uuid: string) => api.submissions.retry(uid, uuid),
@@ -107,59 +66,34 @@ export function LogsSection({ uid }: LogsSectionProps) {
     },
   })
 
-  // Use page 1 results merged with live entries if on page 1
-  const pageEntries: LogEntry[] = data?.results ?? []
-  const displayEntries: LogEntry[] =
-    page === 1
-      ? (() => {
-          const merged = [...liveEntries]
-          for (const e of pageEntries) {
-            if (!merged.some((x) => x.uuid && x.uuid === e.uuid && x.ts === e.ts)) {
-              merged.push(e)
-            }
-          }
-          return merged.sort((a, b) => b.ts - a.ts).slice(0, PAGE_SIZE)
-        })()
-      : pageEntries
-
+  const entries: LogEntry[] = data?.results ?? []
   const totalPages = Math.ceil((data?.total ?? 0) / PAGE_SIZE)
 
   return (
     <Stack gap='sm'>
       <Group justify='space-between'>
-        <Group gap='xs'>
-          <Text size='sm' fw={500}>
-            Submission log
-          </Text>
-          <Badge
-            color={wsStatus === 'open' ? 'green' : wsStatus === 'connecting' ? 'yellow' : 'gray'}
-            variant='dot'
-            size='sm'
-          >
-            {wsStatus === 'open' ? 'live' : wsStatus === 'connecting' ? 'connecting' : 'offline'}
-          </Badge>
-        </Group>
-        {liveEntries.length > 0 && (
-          <Button
-            size='xs'
+        <Text size='sm' fw={500}>
+          Submission log
+        </Text>
+        <Tooltip label='Refresh'>
+          <ActionIcon
             variant='transparent'
-            onClick={() => {
-              setLiveEntries([])
-              queryClient.invalidateQueries({ queryKey: ['logs', uid] })
-            }}
+            size='sm'
+            loading={isFetching}
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['logs', uid] })}
           >
-            Clear live
-          </Button>
-        )}
+            ↺
+          </ActionIcon>
+        </Tooltip>
       </Group>
 
-      {isLoading && page === 1 && !displayEntries.length ? (
+      {isLoading ? (
         <Box ta='center' py='xl'>
           <Loader size='sm' />
         </Box>
-      ) : displayEntries.length === 0 ? (
+      ) : entries.length === 0 ? (
         <Text size='sm' c='dimmed' ta='center' py='xl'>
-          No submissions yet. Waiting for webhook…
+          No submissions yet.
         </Text>
       ) : (
         <Table.ScrollContainer minWidth={500}>
@@ -173,7 +107,7 @@ export function LogsSection({ uid }: LogsSectionProps) {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {displayEntries.map((entry) => (
+              {entries.map((entry) => (
                 <Table.Tr key={`${entry.ts}-${entry.uuid}`} onClick={() => setSelected(entry)}>
                   <Table.Td>
                     <RelativeTime ts={entry.ts} />

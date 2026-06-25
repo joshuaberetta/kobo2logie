@@ -2,14 +2,14 @@
 
 Sits between KoboToolbox and the rest of your data pipeline. When a form is submitted, kobo2logie receives the webhook payload and runs any combination of enrichment, forwarding, geocoding, AI transcription/extraction, Kobo edit-back, AI validation, and email notification — all configurable per form through a browser UI.
 
-**Stack:** Django 5 + Django Channels (ASGI) backend, React 18 + Mantine 7 frontend, PostgreSQL, deployed on [DigitalOcean App Platform](https://www.digitalocean.com/products/app-platform).
+**Stack:** Django 5 + Gunicorn backend, React 18 + Mantine 7 frontend, PostgreSQL, deployed on [DigitalOcean App Platform](https://www.digitalocean.com/products/app-platform).
 
 ---
 
 ## What it does
 
-### Real-time submission viewer
-Every incoming webhook is pushed over WebSocket to open browser tabs. The viewer shows a live log, per-entry pipeline result detail, and a retry button to re-run the pipeline against any past submission.
+### Submission viewer
+Every incoming webhook is logged to PostgreSQL. The browser UI polls for new entries and shows a paginated log, per-entry pipeline result detail, and a retry button to re-run the pipeline against any past submission.
 
 ### Field filtering
 Optionally forward only a selected subset of fields. `_uuid` is always included.
@@ -62,7 +62,7 @@ Send HTML email via [Resend](https://resend.com):
 6. Failure notification email (if pipeline failed)
 7. Success email notification (with optional AI body, PDF, attachments)
 8. Write geocoded fields back to Kobo
-9. Write log entry (visible in browser, pushed over WebSocket)
+9. Write log entry to database
 ```
 
 Steps 3–9 run in a background daemon thread; the webhook returns 200 immediately.
@@ -85,10 +85,9 @@ Go to **App Platform → Create App** in the DO console and connect your GitHub 
 The spec provisions:
 | Resource | Details |
 |---|---|
-| **api** service | Daphne ASGI server, `basic-xs` instance |
+| **api** service | Gunicorn WSGI server, `basic-xxs` instance |
 | **frontend** static site | Vite build of `frontend/`, served at `/` |
 | **db** | PostgreSQL 16 managed database |
-| **redis** | Redis managed database (used by Django Channels for WebSocket layer) |
 
 Routes:
 | Path prefix | Destination |
@@ -96,7 +95,6 @@ Routes:
 | `/api` | `api` service |
 | `/admin` | `api` service |
 | `/static` | `api` service (WhiteNoise static files) |
-| `/ws` | `api` service (WebSocket upgrade) |
 | `/` | `frontend` static site (catch-all `index.html`) |
 
 ### 2. Set secrets
@@ -107,7 +105,6 @@ The app spec does not store secrets. After the first deploy, set these in **App 
 |---|---|---|
 | `SECRET_KEY` | Django secret key — generate with `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` | Yes |
 | `DATABASE_URL` | Injected automatically by DO from the managed PostgreSQL database | Yes (auto) |
-| `REDIS_URL` | Injected automatically by DO from the managed Redis database | Yes (auto) |
 | `KOBO_API_TOKEN_GLOBAL` | API token for `kf.kobotoolbox.org` | Yes |
 | `KOBO_API_TOKEN_EU` | API token for `eu.kobotoolbox.org` | If using EU server |
 | `OPENAI_API_KEY` | Required for transcription, extraction, analysis, AI validation, AI email body, condition generation | For AI features |
@@ -116,7 +113,7 @@ The app spec does not store secrets. After the first deploy, set these in **App 
 | `LOGIE_API_URL` | LogIE API endpoint | For LogIE forwarding |
 | `LOGIE_API_KEY` | LogIE API key | For LogIE forwarding |
 
-`DATABASE_URL` and `REDIS_URL` are wired automatically by the app spec using DO's `${db.DATABASE_URL}` and `${redis.DATABASE_URL}` bindings — you do not set them manually.
+`DATABASE_URL` is wired automatically by the app spec using DO's `${db.DATABASE_URL}` binding — you do not set it manually.
 
 ### 3. Create a Django superuser
 
@@ -162,7 +159,7 @@ pip install -r requirements.txt
 cp .env.example .env         # fill in values
 python manage.py migrate
 python manage.py createsuperuser
-daphne config.asgi:application --port 8000
+gunicorn config.wsgi:application --bind 0.0.0.0:8000
 
 # React frontend (separate terminal)
 cd frontend
@@ -180,7 +177,6 @@ Copy `.env.example` to `.env` and fill in values:
 SECRET_KEY=dev-secret-key-change-me
 DEBUG=True
 # DATABASE_URL=    # leave unset to use SQLite locally
-# REDIS_URL=       # leave unset to use InMemoryChannelLayer locally
 
 DEFAULT_KOBO_BASE_URL=https://kf.kobotoolbox.org
 KOBO_API_TOKEN_GLOBAL=
@@ -192,7 +188,7 @@ LOGIE_API_URL=
 LOGIE_API_KEY=
 ```
 
-Without `DATABASE_URL`, Django uses SQLite (`db.sqlite3`). Without `REDIS_URL`, Channels uses `InMemoryChannelLayer` — WebSocket works but does not survive process restarts.
+Without `DATABASE_URL`, Django uses SQLite (`db.sqlite3`).
 
 ---
 
@@ -226,7 +222,7 @@ Click **Save configuration**.
 
 ### Step 4 — Test
 
-Submit a test entry on KoboToolbox. Switch to the **Submissions** tab — the entry should appear within a few seconds (live over WebSocket). Click it to see the full pipeline result detail.
+Submit a test entry on KoboToolbox. Switch to the **Submissions** tab — the entry should appear within 15 seconds (auto-refresh). Click it to see the full pipeline result detail.
 
 ---
 
@@ -240,12 +236,11 @@ kobo2logie/
 ├── manage.py
 ├── config/
 │   ├── settings.py            # Django settings (env-driven)
-│   ├── asgi.py                # ASGI application + Channels routing
+│   ├── wsgi.py                # WSGI entry point (Gunicorn)
 │   └── urls.py                # Root URL conf (includes app.urls under /api/)
 ├── app/
 │   ├── models.py              # FormConfig, SubmissionLog
 │   ├── views.py               # All API views + pipeline orchestration
-│   ├── consumers.py           # WebSocket consumer (Django Channels)
 │   ├── urls.py                # API URL patterns
 │   ├── admin.py               # Django admin registration
 │   ├── migrations/
@@ -273,7 +268,7 @@ kobo2logie/
     │   │   ├── ConditionBuilder.tsx      # AND/OR rule editor + AI generate
     │   │   ├── ConfigSection.tsx         # Full config editor
     │   │   ├── SetupSection.tsx          # Webhook + permission setup
-    │   │   ├── LogsSection.tsx           # Live log table + WebSocket
+    │   │   ├── LogsSection.tsx           # Paginated log table (15s auto-refresh)
     │   │   └── SubmissionDetailModal.tsx # Pipeline result detail
     │   └── theme/kobo/            # Mantine KoboToolbox theme overrides
     ├── package.json
@@ -300,8 +295,6 @@ All endpoints are under `/api/`.
 | `POST` | `/api/auth/login/` | Session login |
 | `POST` | `/api/auth/logout/` | Session logout |
 | `GET` | `/api/auth/me/` | Current user |
-
-WebSocket: `wss://<host>/ws/stream/<uid>/`
 
 ---
 

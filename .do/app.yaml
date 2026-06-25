@@ -8,18 +8,16 @@ services:
       branch: beta
       deploy_on_push: true
     build_command: pip install -r requirements.txt && python manage.py migrate --noinput && python manage.py collectstatic --noinput
-    run_command: daphne config.asgi:application --bind 0.0.0.0 --port $PORT
+    run_command: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2
     environment_slug: python
     instance_count: 1
-    instance_size_slug: basic-xs
+    instance_size_slug: basic-xxs
     routes:
       - path: /api
         preserve_path_prefix: true
       - path: /admin
         preserve_path_prefix: true
       - path: /static
-        preserve_path_prefix: true
-      - path: /ws
         preserve_path_prefix: true
     envs:
       - key: DEBUG
@@ -31,7 +29,7 @@ services:
       - key: MAX_BODY_BYTES
         value: "1048576"
       # Secrets — set via DO web UI after deploy (not stored in app spec):
-      # SECRET_KEY, DATABASE_URL, REDIS_URL,
+      # SECRET_KEY, DATABASE_URL,
       # KOBO_API_TOKEN_GLOBAL, KOBO_API_TOKEN_EU,
       # OPENAI_API_KEY, RESEND_API_KEY, RESEND_FROM_EMAIL,
       # LOGIE_API_URL, LOGIE_API_KEY (optional)
@@ -41,8 +39,6 @@ databases:
   - name: db
     engine: PG
     version: "16"
-  - name: redis
-    engine: REDIS
 
 static_sites:
   - name: frontend
