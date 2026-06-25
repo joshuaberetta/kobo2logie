@@ -71,7 +71,25 @@ export function fileAttachments(submission: KoboSubmission): KoboAttachment[] {
 }
 
 /**
- * Collects all string values from the flat submission JSON (excluding _attachments).
+ * Recursively collects all string values from a value tree (objects, arrays, primitives).
+ * Skips the _attachments key to avoid scanning attachment metadata as filenames.
+ */
+function collectStringValues(value: unknown, names: Set<string>): void {
+  if (typeof value === "string") {
+    if (value.length > 0) names.add(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectStringValues(item, names);
+  } else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k === "_attachments") continue;
+      collectStringValues(v, names);
+    }
+  }
+}
+
+/**
+ * Collects all string values from the submission JSON (excluding _attachments),
+ * including values nested inside repeat group arrays.
  * Used to identify which attachments are actually referenced in the submission data —
  * the REST service may filter out some questions, so only referenced images are forwarded.
  */
@@ -79,9 +97,7 @@ export function submissionImageFilenames(submission: KoboSubmission): Set<string
   const names = new Set<string>();
   for (const [key, value] of Object.entries(submission)) {
     if (key === "_attachments") continue;
-    if (typeof value === "string" && value.length > 0) {
-      names.add(value);
-    }
+    collectStringValues(value, names);
   }
   return names;
 }
@@ -91,6 +107,7 @@ export function submissionImageFilenames(submission: KoboSubmission): Set<string
  * appears as a string value in the reference payload.
  * When a fields subset is active, pass the filtered jsonPayload as reference
  * so only attachments relevant to those fields are fetched and forwarded.
+ * Handles repeat group arrays by scanning recursively.
  */
 export function attachmentsToForward(
   submission: KoboSubmission,
@@ -100,9 +117,7 @@ export function attachmentsToForward(
   const filenames = new Set<string>();
   for (const [key, value] of Object.entries(scanTarget)) {
     if (key === "_attachments") continue;
-    if (typeof value === "string" && value.length > 0) {
-      filenames.add(value);
-    }
+    collectStringValues(value, filenames);
   }
   return (submission._attachments ?? []).filter(
     (a) => !a.is_deleted && filenames.has(a.media_file_basename)
