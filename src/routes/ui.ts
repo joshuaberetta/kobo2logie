@@ -536,6 +536,10 @@ ui.get("/:uid", (c) => {
             <button type="button" class="kv-add" onclick="addKVRow()">+ Add field</button>
           </div>
           <div>
+            <label class="checkbox-row"><input type="checkbox" id="append-project-metadata" autocomplete="off" /><span>Append project metadata</span></label>
+            <p class="label-hint" style="margin-top:.3rem;margin-left:1.55rem">Add the Kobo project's <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">project_uid</code>, <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">project_name</code>, <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">project_owner_username</code> and <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">project_server_url</code> under <code style="font-family:monospace;background:#f3f4f6;padding:.05em .25em;border-radius:3px;font-size:.9em">_metadata</code>. On by default when forwarding to LogIE.</p>
+          </div>
+          <div>
             <label>Forward media types<span class="label-hint">which attachment types to forward as binary files — all types forwarded if none checked</span></label>
             <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.3rem">
               <label class="checkbox-row"><input type="checkbox" name="fwd-media" value="image" /><span>Images</span></label>
@@ -926,6 +930,8 @@ ui.get("/:uid", (c) => {
     // ── LogIE checkbox toggle ─────────────────────────────────────────────
     document.getElementById('forward-to-logie').addEventListener('change', function() {
       document.getElementById('forward-custom-fields').style.display = this.checked ? 'none' : '';
+      // Default project metadata on when forwarding to LogIE
+      if (this.checked) document.getElementById('append-project-metadata').checked = true;
     });
 
     // ── Condition builder ─────────────────────────────────────────────────────
@@ -1634,6 +1640,9 @@ ui.get("/:uid", (c) => {
         const forwardToLogie = !!data.forwardToLogie;
         document.getElementById('forward-to-logie').checked = forwardToLogie;
         document.getElementById('forward-custom-fields').style.display = forwardToLogie ? 'none' : '';
+        // Default project metadata on when forwarding to LogIE and nothing saved yet
+        document.getElementById('append-project-metadata').checked =
+          data.appendProjectMetadata != null ? !!data.appendProjectMetadata : forwardToLogie;
         if (data.transcribe?.prompt) {
           document.getElementById('transcribe-prompt').value = data.transcribe.prompt;
         }
@@ -1742,7 +1751,7 @@ ui.get("/:uid", (c) => {
         const res = await fetch('/api/configure/project/' + UID, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forwardUrl, forwardToken, forwardToLogie: document.getElementById('forward-to-logie').checked, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, geocodeAddressFields, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, failureNotification: document.getElementById('failure-notification-enabled').checked && failureNotificationConfig ? failureNotificationConfig : null, forwardCondition: getCondition('forward') }),
+          body: JSON.stringify({ forwardUrl, forwardToken, forwardToLogie: document.getElementById('forward-to-logie').checked, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, appendProjectMetadata: document.getElementById('append-project-metadata').checked, editOriginal, geocode, geocodeField, geocodeAddressFields, validateSubmission: document.getElementById('validate-submission').checked && validateConfig ? validateConfig : null, emailNotification: emailNotificationConfig, failureNotification: document.getElementById('failure-notification-enabled').checked && failureNotificationConfig ? failureNotificationConfig : null, forwardCondition: getCondition('forward') }),
         });
         if (res.ok) {
           setStatus('success', '\u2713 Saved');

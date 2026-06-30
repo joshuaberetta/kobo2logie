@@ -191,7 +191,7 @@ hook.post("/:formUID", async (c) => {
   // Fire-and-forget forwarding / editing if a config is stored for this form
   const fwdConfig = await c.env.FORWARD_CONFIG.get(formUID);
   if (fwdConfig) {
-    const { forwardUrl: rawForwardUrl, forwardToken: rawForwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, geocodeAddressFields, server, emailNotification, validateSubmission, failureNotification, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
+    const { forwardUrl: rawForwardUrl, forwardToken: rawForwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, appendProjectMetadata, projectMetadata, editOriginal, geocode, geocodeField, geocodeAddressFields, server, emailNotification, validateSubmission, failureNotification, forwardCondition, geocodeCondition } = JSON.parse(fwdConfig) as {
       forwardUrl?: string;
       forwardToken?: string;
       forwardToLogie?: boolean;
@@ -202,6 +202,8 @@ hook.post("/:formUID", async (c) => {
       extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
+      appendProjectMetadata?: boolean;
+      projectMetadata?: { project_uid?: string; project_name?: string; project_owner_username?: string; project_server_url?: string };
       editOriginal?: boolean;
       geocode?: boolean;
       geocodeField?: string;
@@ -243,12 +245,25 @@ hook.post("/:formUID", async (c) => {
           }
         }
 
-        // Inject configured key-value pairs under _metadata in the forwarded payload
+        // Inject configured key-value pairs (and optionally project metadata) under _metadata in the forwarded payload
+        const meta: Record<string, unknown> = {};
         if (appendValues && appendValues.length > 0) {
-          const meta: Record<string, string> = {};
           for (const { key, value } of appendValues) {
             meta[key] = value;
           }
+        }
+        // Append Kobo project metadata captured at configuration time
+        if (appendProjectMetadata && projectMetadata) {
+          const projectMeta: Record<string, string> = {};
+          for (const key of ["project_uid", "project_name", "project_owner_username", "project_server_url"] as const) {
+            const value = projectMetadata[key];
+            if (value) projectMeta[key] = value;
+          }
+          if (Object.keys(projectMeta).length > 0) {
+            Object.assign(meta, projectMeta);
+          }
+        }
+        if (Object.keys(meta).length > 0) {
           if (!jsonPayload) {
             jsonPayload = { ...(submission as Record<string, unknown>) };
           }

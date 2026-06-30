@@ -213,6 +213,8 @@ configure.get("/project/:uid", async (c) => {
         extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
+        appendProjectMetadata?: boolean;
+        projectMetadata?: { project_uid?: string; project_name?: string; project_owner_username?: string; project_server_url?: string };
         editOriginal?: boolean;
         geocode?: boolean;
         geocodeField?: string;
@@ -236,6 +238,8 @@ configure.get("/project/:uid", async (c) => {
     extractText: config.extractText ?? null,
     forwardMedia: config.forwardMedia ?? null,
     appendValues: config.appendValues ?? [],
+    appendProjectMetadata: config.appendProjectMetadata ?? false,
+    projectMetadata: config.projectMetadata ?? null,
     editOriginal: config.editOriginal ?? false,
     geocode: config.geocode ?? false,
     geocodeField: config.geocodeField ?? "",
@@ -252,7 +256,7 @@ configure.get("/project/:uid", async (c) => {
 
 configure.post("/project/:uid", async (c) => {
   const uid = c.req.param("uid");
-  const { forwardUrl, forwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, editOriginal, geocode, geocodeField, geocodeAddressFields, emailNotification, validateSubmission, failureNotification, forwardCondition, geocodeCondition } = await c.req.json<{
+  const { forwardUrl, forwardToken, forwardToLogie, fields, transcribe, extract, analyzeAudio, extractText, forwardMedia, appendValues, appendProjectMetadata, editOriginal, geocode, geocodeField, geocodeAddressFields, emailNotification, validateSubmission, failureNotification, forwardCondition, geocodeCondition } = await c.req.json<{
     forwardUrl?: string;
     forwardToken?: string;
     forwardToLogie?: boolean;
@@ -263,6 +267,7 @@ configure.post("/project/:uid", async (c) => {
     extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
+    appendProjectMetadata?: boolean;
     editOriginal?: boolean;
     geocode?: boolean;
     geocodeField?: string;
@@ -531,7 +536,7 @@ configure.post("/project/:uid", async (c) => {
     ? geocodeAddressFields.map((f) => String(f).trim()).filter(Boolean)
     : [];
 
-  if (!safeUrl && !safeToken && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && !editOriginal && !geocode && safeGeocodeAddressFields.length === 0 && safeEmailNotification === undefined && safeValidateSubmission === undefined) {
+  if (!safeUrl && !safeToken && forwardToLogie !== true && safeFields.length === 0 && safeTranscribe === undefined && safeExtract === undefined && safeAnalyzeAudio === undefined && safeExtractText === undefined && safeForwardMedia === null && (!safeAppendValues || safeAppendValues.length === 0) && appendProjectMetadata !== true && !editOriginal && !geocode && safeGeocodeAddressFields.length === 0 && safeEmailNotification === undefined && safeValidateSubmission === undefined) {
     await c.env.FORWARD_CONFIG.delete(uid);
   } else {
     // Preserve any other keys already in the config (e.g. set by /forward)
@@ -584,6 +589,38 @@ configure.post("/project/:uid", async (c) => {
       } else {
         delete next.appendValues;
       }
+    }
+    // appendProjectMetadata: when enabled, capture the Kobo project details now so the
+    // forward path can append them under _metadata without an extra fetch per submission.
+    if (appendProjectMetadata === true) {
+      next.appendProjectMetadata = true;
+      const server =
+        typeof next.server === "string" && ALLOWED_SERVERS.has(next.server)
+          ? next.server
+          : c.env.DEFAULT_KOBO_BASE_URL;
+      const token =
+        new URL(server).hostname === "eu.kobotoolbox.org"
+          ? c.env.KOBO_API_TOKEN_EU
+          : c.env.KOBO_API_TOKEN_GLOBAL;
+      try {
+        const assetRes = await fetch(`${server}/api/v2/assets/${uid}/`, {
+          headers: { Authorization: `Token ${token}` },
+        });
+        if (assetRes.ok) {
+          const asset = await assetRes.json<{ uid?: string; name?: string; owner__username?: string }>();
+          next.projectMetadata = {
+            project_uid: asset.uid ?? uid,
+            ...(asset.name ? { project_name: asset.name } : {}),
+            ...(asset.owner__username ? { project_owner_username: asset.owner__username } : {}),
+            project_server_url: server,
+          };
+        }
+      } catch (err) {
+        console.error("[configure] Failed to fetch project metadata:", err);
+      }
+    } else {
+      delete next.appendProjectMetadata;
+      delete next.projectMetadata;
     }
     // emailNotification: null means "clear", undefined means "don't touch"
     if (emailNotification === null) {

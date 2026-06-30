@@ -17,7 +17,7 @@ Optionally forward only a selected subset of form fields. `_uuid` is always incl
 POST the submission payload to any HTTPS URL, with an optional `Authorization: Bearer` token. Forwarding can also target LogIE directly using server-side environment variables (no token stored in KV). A **conditional rule engine** (AND/OR groups of field comparisons) can gate forwarding so it only fires when the submission matches specific criteria.
 
 ### Static value injection
-Append a set of static key-value pairs under a `_metadata` key in every forwarded payload — useful for tagging submissions with a project code, region, or deployment identifier.
+Append a set of static key-value pairs under a `_metadata` key in every forwarded payload — useful for tagging submissions with a project code, region, or deployment identifier. The Kobo project's own details (`project_uid`, `project_name`, `project_owner_username`, `project_server_url`) can also be appended under the same `_metadata` key — captured from the Kobo asset at configuration time and on by default when forwarding to LogIE.
 
 ### Audio transcription
 Fetch audio attachments from Kobo and transcribe them via OpenAI (Whisper). The transcript is injected into the payload as `<question_xpath>_transcript` before forwarding. Optionally translate the transcript into another language in the same step. Files over 25 MB are silently skipped.
@@ -265,6 +265,13 @@ Per-project settings are stored in the `FORWARD_CONFIG` KV namespace under the f
   "fields": ["xpath1", "xpath2"],
   "forwardCondition": { "type": "group", "combinator": "and", "rules": [] },
   "appendValues": [{ "key": "project_code", "value": "SYR-2025" }],
+  "appendProjectMetadata": true,
+  "projectMetadata": {
+    "project_uid": "aMHkNWHn6cRh4sSkcLBGrA",
+    "project_name": "RISA — Venezuela Earthquake",
+    "project_owner_username": "kobo_ven_eq_admin",
+    "project_server_url": "https://kf.kobotoolbox.org"
+  },
   "forwardMedia": ["photo_question_xpath"],
   "transcribe": {
     "questions": ["audio_question_xpath"],
@@ -324,6 +331,7 @@ Per-project settings are stored in the `FORWARD_CONFIG` KV namespace under the f
 Key notes:
 - `fields` — empty array means forward all fields; `_uuid` is always included.
 - `forwardToLogie` — when `true`, uses `LOGIE_API_URL` / `LOGIE_API_KEY` env vars instead of `forwardUrl` / `forwardToken`.
+- `appendProjectMetadata` — when `true`, the captured `projectMetadata` is merged into the forwarded payload's `_metadata` (alongside any `appendValues`). Defaults to `true` when forwarding to LogIE, otherwise `false`. `projectMetadata` is snapshotted from the Kobo asset at save time — re-save the config to refresh it.
 - `transcribe` / `extract` / `analyzeAudio` / `extractText` — `null` or absent means that enrichment step is disabled.
 - `geocode` — requires `geocodeField` (a geopoint xpath) or falls back to `_geolocation`.
 - `editOriginal` — writes all enrichment results back to the Kobo submission via bulk-edit.
