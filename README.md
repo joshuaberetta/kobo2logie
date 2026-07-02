@@ -83,7 +83,7 @@ All enrichment results from step 2 (transcripts, extracted fields) are available
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) LTS — version 20 or 22 (an `.nvmrc` pins 22; run `nvm use`). Wrangler's local dev server (miniflare) does not work on newer non-LTS releases such as Node 25.
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is sufficient)
 - Wrangler CLI:
   ```bash
