@@ -36,6 +36,14 @@ export class FormSession implements DurableObject {
       return this.handleGetLogs(request);
     }
 
+    if (url.pathname === "/forwarded-uuids" && request.method === "GET") {
+      return this.handleGetForwardedUuids();
+    }
+
+    if (url.pathname === "/forwarded-uuids" && request.method === "POST") {
+      return this.handleAddForwardedUuids(request);
+    }
+
     return new Response("Not found", { status: 404 });
   }
 
@@ -124,7 +132,47 @@ export class FormSession implements DurableObject {
     logs.unshift(entry); // newest first
     if (logs.length > MAX_LOG) logs.length = MAX_LOG;
     await this.state.storage.put("logs", logs);
+
+    // Record into the uncapped forwarded-uuid index so the backfill diff can
+    // recognise submissions that have already been processed even after they
+    // scroll out of the (capped) display log above.
+    if (entry.uuid) {
+      const normalized = entry.uuid.replace(/^uuid:/, "");
+      const forwarded = new Set((await this.state.storage.get<string[]>("forwardedUuids")) ?? []);
+      if (!forwarded.has(normalized)) {
+        forwarded.add(normalized);
+        await this.state.storage.put("forwardedUuids", [...forwarded]);
+      }
+    }
+
     return new Response("OK", { status: 200 });
+  }
+
+  // ── Forwarded-uuid index (backfill diff source) ───────────────────────────
+
+  private async handleGetForwardedUuids(): Promise<Response> {
+    const uuids = (await this.state.storage.get<string[]>("forwardedUuids")) ?? [];
+    return new Response(JSON.stringify({ uuids }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  private async handleAddForwardedUuids(request: Request): Promise<Response> {
+    let body: { uuids?: string[] };
+    try {
+      body = await request.json<{ uuids?: string[] }>();
+    } catch {
+      return new Response("Invalid JSON", { status: 400 });
+    }
+    const incoming = Array.isArray(body.uuids) ? body.uuids : [];
+    const forwarded = new Set((await this.state.storage.get<string[]>("forwardedUuids")) ?? []);
+    for (const u of incoming) {
+      if (typeof u === "string" && u) forwarded.add(u.replace(/^uuid:/, ""));
+    }
+    await this.state.storage.put("forwardedUuids", [...forwarded]);
+    return new Response(JSON.stringify({ ok: true, total: forwarded.size }), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   private async handleGetLogs(request: Request): Promise<Response> {

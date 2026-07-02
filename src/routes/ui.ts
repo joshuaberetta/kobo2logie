@@ -401,6 +401,11 @@ ui.get("/:uid", (c) => {
     .log-detail-btn:hover { border-color: #9ca3af; color: #374151; }
     .log-load-more { width: 100%; padding: .45rem; background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: .78rem; font-weight: 600; color: #6b7280; cursor: pointer; margin-top: .4rem; }
     .log-load-more:hover { border-color: #9ca3af; color: #374151; }
+    .backfill-controls { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; }
+    .backfill-status { font-size: .72rem; font-weight: 700; }
+    .backfill-status.ok { color: #15803d; }
+    .backfill-status.fail { color: #dc2626; }
+    .backfill-status.pending { color: #9ca3af; }
     .log-skel-row td { padding: .38rem .5rem; border-bottom: 1px solid #f3f4f6; }
     .log-skel-row:last-child td { border-bottom: none; }
     .log-skel-bar { display: inline-block; height: .65rem; border-radius: 4px; background: #e5e7eb; animation: shimmer 1.5s ease-in-out infinite; vertical-align: middle; }
@@ -655,6 +660,25 @@ ui.get("/:uid", (c) => {
     <div class="log-body" id="log-body">
       <div class="log-scroll" id="log-scroll">
         <div id="logs-container"></div>
+      </div>
+    </div>
+
+    <div class="log-header">
+      <button type="button" class="log-title-btn collapsed" id="backfill-toggle" onclick="toggleBackfill()"><svg class="log-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Backfill submissions<span id="backfill-count" class="fields-count" style="display:none"></span></button>
+      <div class="log-actions">
+        <button type="button" class="log-refresh-btn" onclick="findPending()" id="backfill-find-btn">Find un-forwarded</button>
+      </div>
+    </div>
+    <div class="log-body" id="backfill-body" style="display:none">
+      <p class="label-hint" style="margin:.1rem 0 .6rem">Lists submissions in the Kobo project that aren't yet forwarded (compared by root UUID), so you can push data collected before this integration was set up. Select rows and push them through the same pipeline as new submissions.</p>
+      <div class="backfill-controls" id="backfill-controls" style="display:none">
+        <label class="checkbox-row" style="margin-bottom:0"><input type="checkbox" id="backfill-select-all" onchange="toggleSelectAllPending(this.checked)" /><span>Select all loaded</span></label>
+        <span style="flex:1"></span>
+        <span id="backfill-selected-count" class="fields-count"></span>
+        <button type="button" class="save-btn" id="backfill-push-btn" onclick="pushSelected()" style="padding:.4rem 1rem;font-size:.82rem">Push selected</button>
+      </div>
+      <div class="log-scroll" style="margin-top:.5rem">
+        <div id="backfill-container"></div>
       </div>
     </div>
   </div>
@@ -2021,6 +2045,156 @@ ui.get("/:uid", (c) => {
         URL.revokeObjectURL(url);
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Export'; }
+      }
+    }
+
+    // ── Backfill submissions ────────────────────────────────────────────────
+    const BACKFILL_PAGE = 200;   // Kobo list page size
+    const BACKFILL_PUSH_BATCH = 50; // must not exceed server MAX_PUSH_BATCH
+    let backfillCollapsed = true;
+    let pendingRows = [];        // [{uuid, id, submissionTime, selected, status}]
+    let backfillNextStart = 0;
+    let backfillHasMore = false;
+    let backfillLoaded = false;
+
+    function toggleBackfill() {
+      backfillCollapsed = !backfillCollapsed;
+      document.getElementById('backfill-body').style.display = backfillCollapsed ? 'none' : '';
+      document.getElementById('backfill-toggle').classList.toggle('collapsed', backfillCollapsed);
+      if (!backfillCollapsed && !backfillLoaded) findPending();
+    }
+
+    function updateSelectedCount() {
+      const n = pendingRows.filter(r => r.selected).length;
+      const el = document.getElementById('backfill-selected-count');
+      if (el) el.textContent = n + ' selected';
+      const btn = document.getElementById('backfill-push-btn');
+      if (btn) btn.disabled = n === 0;
+    }
+
+    function renderPendingRows(rows, startIdx) {
+      return rows.map(function(r, i) {
+        const idx = startIdx + i;
+        const t = r.submissionTime ? new Date(r.submissionTime) : null;
+        const timeStr = t && !isNaN(t) ? (t.toLocaleDateString(undefined, {month:'short',day:'numeric',year:'numeric'}) + ' ' + t.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit'})) : '—';
+        const subId = escHtml(r.uuid ? r.uuid.slice(0, 8) + '…' : (r.id != null ? String(r.id) : '—'));
+        let statusCell = '';
+        if (r.status === 'ok') statusCell = '<span class="backfill-status ok">✓ Pushed</span>';
+        else if (r.status === 'error') statusCell = '<span class="backfill-status fail">✗ Failed</span>';
+        else if (r.status === 'not_found') statusCell = '<span class="backfill-status fail">Not found</span>';
+        else if (r.status === 'pushing') statusCell = '<span class="backfill-status pending">…</span>';
+        return '<tr>' +
+          '<td><input type="checkbox" ' + (r.selected ? 'checked ' : '') + (r.status === 'ok' ? 'disabled ' : '') + 'onchange="togglePending(' + idx + ',this.checked)" /></td>' +
+          '<td>' + escHtml(timeStr) + '</td>' +
+          '<td title="' + escHtml(r.uuid || '') + '">' + subId + '</td>' +
+          '<td>' + statusCell + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    function renderPendingTable() {
+      const container = document.getElementById('backfill-container');
+      if (pendingRows.length === 0) {
+        container.innerHTML = '<p class="log-empty">No un-forwarded submissions found.</p>';
+        return;
+      }
+      container.innerHTML =
+        '<table class="log-table"><thead><tr>' +
+        '<th style="width:1.5rem"></th><th>Submitted</th><th>Submission ID</th><th>Status</th>' +
+        '</tr></thead><tbody>' + renderPendingRows(pendingRows, 0) + '</tbody></table>';
+      if (backfillHasMore) {
+        container.insertAdjacentHTML('beforeend',
+          '<button type="button" class="log-load-more" id="backfill-more-btn" onclick="loadMorePending()">Load more</button>');
+      }
+    }
+
+    function togglePending(idx, checked) {
+      if (pendingRows[idx]) pendingRows[idx].selected = checked;
+      updateSelectedCount();
+    }
+
+    function toggleSelectAllPending(checked) {
+      pendingRows.forEach(r => { if (r.status !== 'ok') r.selected = checked; });
+      renderPendingTable();
+      updateSelectedCount();
+    }
+
+    async function findPending() {
+      backfillNextStart = 0;
+      pendingRows = [];
+      const btn = document.getElementById('backfill-find-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+      const container = document.getElementById('backfill-container');
+      container.innerHTML = logSkeletonHtml();
+      document.getElementById('backfill-controls').style.display = 'none';
+      try {
+        await loadMorePending(true);
+        backfillLoaded = true;
+      } catch (err) {
+        container.innerHTML = '<p class="log-empty" style="color:#dc2626">Could not load submissions.</p>';
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Find un-forwarded'; }
+      }
+    }
+
+    async function loadMorePending(reset) {
+      const moreBtn = document.getElementById('backfill-more-btn');
+      if (moreBtn) moreBtn.disabled = true;
+      const res = await fetch('/api/backfill/' + UID + '/pending?start=' + backfillNextStart + '&limit=' + BACKFILL_PAGE);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || res.status);
+      }
+      const data = await res.json();
+      const page = (Array.isArray(data.pending) ? data.pending : []).map(p => ({ ...p, selected: false, status: null }));
+      backfillHasMore = !!data.hasMore;
+      backfillNextStart = data.nextStart != null ? data.nextStart : backfillNextStart + page.length;
+      pendingRows = reset ? page : pendingRows.concat(page);
+      document.getElementById('backfill-controls').style.display = '';
+      const cnt = document.getElementById('backfill-count');
+      if (cnt) { cnt.style.display = ''; cnt.textContent = pendingRows.length + (backfillHasMore ? '+' : ''); }
+      document.getElementById('backfill-select-all').checked = false;
+      renderPendingTable();
+      updateSelectedCount();
+    }
+
+    async function pushSelected() {
+      const selected = pendingRows.filter(r => r.selected && r.status !== 'ok');
+      if (selected.length === 0) return;
+      const btn = document.getElementById('backfill-push-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Pushing…'; }
+      // Mark as pushing and re-render
+      selected.forEach(r => { r.status = 'pushing'; });
+      renderPendingTable();
+      try {
+        for (let i = 0; i < selected.length; i += BACKFILL_PUSH_BATCH) {
+          const batch = selected.slice(i, i + BACKFILL_PUSH_BATCH);
+          if (btn) btn.textContent = 'Pushing ' + Math.min(i + batch.length, selected.length) + '/' + selected.length + '…';
+          const res = await fetch('/api/backfill/' + UID + '/push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uuids: batch.map(r => r.uuid) })
+          });
+          const data = await res.json().catch(() => ({}));
+          const byUuid = {};
+          (data.results || []).forEach(r => { byUuid[r.uuid] = r; });
+          batch.forEach(r => {
+            const result = byUuid[r.uuid];
+            r.status = result ? result.status : 'error';
+            if (r.status === 'ok') r.selected = false;
+          });
+          renderPendingTable();
+          updateSelectedCount();
+        }
+      } catch (err) {
+        selected.forEach(r => { if (r.status === 'pushing') r.status = 'error'; });
+        renderPendingTable();
+        alert('Push failed: ' + err);
+      } finally {
+        if (btn) { btn.textContent = 'Push selected'; }
+        updateSelectedCount();
+        // Refresh the submission log so the new attempts appear
+        setTimeout(() => refreshLogs(true), 1000);
       }
     }
 

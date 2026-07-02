@@ -57,6 +57,11 @@ Send HTML email notifications via [Resend](https://resend.com) on each submissio
 ### PDF reports
 Generate a formatted PDF from a submission using the [kobo2pdf](https://kobo2pdf.imtools.info) rendering service. Image attachments are fetched from Kobo and embedded in the PDF. The PDF can be attached to email notifications.
 
+### Backfill un-forwarded submissions
+The integration only receives data through Kobo's REST Service, which fires on *new* submissions — so any data collected before the integration was set up never reaches the forwarding location. The **Backfill submissions** section on the project settings page lists submissions that exist in the Kobo project but haven't been forwarded (compared by root UUID), then lets you select all or a subset and push them through the same pipeline as live submissions.
+
+Each processed submission is recorded in an uncapped forwarded-UUID index in the Durable Object, so the diff stays correct even for projects with more than 100 submissions (beyond the display log's cap). The index begins populating at deploy time, so on a project that was already fully forwarded before this feature shipped, the first listing may show submissions that were in fact already sent — the submission time is shown so you can judge, and pushing is always deliberate (never automatic). Pushes run with bounded concurrency in batches to stay within Worker subrequest limits.
+
 ---
 
 ## Pipeline execution order
@@ -226,16 +231,19 @@ kobo2logie/
 ├── tsconfig.json
 └── src/
     ├── index.ts               # Hono app entry point, route registration
-    ├── FormSession.ts         # Durable Object — WebSocket hub + submission buffer + log
+    ├── FormSession.ts         # Durable Object — WebSocket hub + submission buffer + log + forwarded-uuid index
     ├── types.ts               # Shared Env interface + Condition/LogEntry types
     ├── routes/
     │   ├── ui.ts              # GET / (setup) and GET /:uid (project settings UI)
     │   ├── configure.ts       # /api/configure/* — Kobo API proxy + KV config read/write
     │   ├── hook.ts            # POST /api/hook/:formUID — webhook receiver + enrichment pipeline
     │   ├── stream.ts          # WebSocket /api/stream/:formUID — live viewer connection
-    │   └── media.ts           # GET /api/media — authenticated Kobo media proxy
+    │   ├── media.ts           # GET /api/media — authenticated Kobo media proxy
+    │   ├── retry.ts           # POST /api/retry/:formUID — re-drive the pipeline for one submission
+    │   └── backfill.ts        # /api/backfill/:formUID/* — list + push un-forwarded submissions
     └── lib/
         ├── kobo.ts            # Types, SSRF allowlist, attachment helpers
+        ├── repush.ts          # Shared fetch-by-uuid + re-post-to-hook helpers (retry + backfill)
         ├── forward.ts         # Multipart forwarding + enrichment orchestration
         ├── transcribe.ts      # OpenAI Whisper audio transcription + optional translation
         ├── extract.ts         # OpenAI vision image → structured field extraction

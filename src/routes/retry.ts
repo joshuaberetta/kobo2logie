@@ -1,11 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types.js";
 import { resolveKoboEditToken } from "../lib/koboEdit.js";
-
-const ALLOWED_SERVERS = new Set([
-  "https://kf.kobotoolbox.org",
-  "https://eu.kobotoolbox.org",
-]);
+import { fetchKoboSubmissionByUuid, repostToHook, resolveServer } from "../lib/repush.js";
 
 const retry = new Hono<{ Bindings: Env }>();
 
@@ -25,10 +21,7 @@ retry.post("/:formUID", async (c) => {
   }
 
   const config = JSON.parse(fwdConfigRaw) as { server?: string };
-  const server =
-    config.server && ALLOWED_SERVERS.has(config.server)
-      ? config.server
-      : c.env.DEFAULT_KOBO_BASE_URL;
+  const server = resolveServer(config.server, c.env.DEFAULT_KOBO_BASE_URL);
 
   const koboToken = resolveKoboEditToken(server, {
     global: c.env.KOBO_API_TOKEN_GLOBAL,
@@ -36,32 +29,20 @@ retry.post("/:formUID", async (c) => {
   });
 
   // Fetch the original submission from KoboToolbox by _uuid
-  const query = JSON.stringify({ _uuid: uuid.trim() });
-  const koboUrl = `${server}/api/v2/assets/${formUID}/data.json?query=${encodeURIComponent(query)}`;
-  const koboRes = await fetch(koboUrl, {
-    headers: { Authorization: `Token ${koboToken}` },
-  });
-
-  if (!koboRes.ok) {
-    const text = await koboRes.text().catch(() => "");
-    console.error(`[retry] Kobo fetch failed: HTTP ${koboRes.status} — ${text.slice(0, 200)}`);
-    return c.json({ error: `Failed to fetch submission from Kobo: HTTP ${koboRes.status}` }, 502);
+  let submission;
+  try {
+    submission = await fetchKoboSubmissionByUuid(server, formUID, uuid, koboToken);
+  } catch (err) {
+    console.error(`[retry] ${err}`);
+    return c.json({ error: `Failed to fetch submission from Kobo: ${err}` }, 502);
   }
-
-  const data = await koboRes.json<{ results?: unknown[] }>();
-  const submission = data.results?.[0];
   if (!submission) {
     return c.json({ error: "Submission not found in Kobo" }, 404);
   }
 
   // Re-drive the hook pipeline by posting to the hook endpoint
   const workerOrigin = new URL(c.req.url).origin;
-  const hookUrl = `${workerOrigin}/api/hook/${formUID}`;
-  const hookRes = await fetch(hookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(submission),
-  });
+  const hookRes = await repostToHook(workerOrigin, formUID, submission);
 
   if (!hookRes.ok) {
     return c.json({ error: `Hook pipeline returned HTTP ${hookRes.status}` }, 502);
