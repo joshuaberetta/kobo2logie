@@ -1543,8 +1543,13 @@ ui.get("/:uid", (c) => {
       badge.textContent = total > 0 ? checked + ' / ' + total : '';
     }
 
-    document.addEventListener('input', markDirty);
-    document.addEventListener('change', markDirty);
+    // The backfill section's controls (row/select-all checkboxes) are not config
+    // settings, so their input/change events must not mark the form dirty.
+    function isConfigChange(e) {
+      return !(e.target && e.target.closest && e.target.closest('#backfill-body'));
+    }
+    document.addEventListener('input', function(e) { if (isConfigChange(e)) markDirty(); });
+    document.addEventListener('change', function(e) { if (isConfigChange(e)) markDirty(); });
     document.addEventListener('click', function(e) {
       if (e.target && e.target.classList.contains('kv-remove')) markDirty();
     });
