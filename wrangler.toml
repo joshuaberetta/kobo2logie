@@ -19,6 +19,13 @@ id = "57e90e5396be420dabba75b6c9093c3e"
 name = "FORM_SESSION"
 class_name = "FormSession"
 
+# Service binding to this same worker, so retry/backfill can re-invoke the hook
+# pipeline in-process. A plain fetch to the worker's own public hostname is
+# routed to origin and times out (522).
+[[services]]
+binding = "SELF"
+service = "kobo2logie"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["FormSession"]

@@ -61,14 +61,21 @@ export async function fetchKoboSubmissionByUuid(
  * Re-drives the full hook pipeline for a submission by POSTing it to the hook
  * endpoint, exactly as if Kobo's REST Service had delivered it. Returns the
  * hook response so callers can surface the HTTP status.
+ *
+ * The request is dispatched through the worker's SELF service binding rather
+ * than a plain `fetch` to the public hostname. A subrequest to the worker's own
+ * zone is routed to the origin (which doesn't exist for a Worker-only zone) and
+ * times out with a 522 — the service binding re-invokes this worker in-process
+ * instead, with no network hop.
  */
 export async function repostToHook(
-  workerOrigin: string,
+  self: Fetcher,
   formUID: string,
   submission: KoboSubmission | Record<string, unknown>
 ): Promise<Response> {
-  const hookUrl = `${workerOrigin}/api/hook/${formUID}`;
-  return fetch(hookUrl, {
+  // Host is ignored by the service binding; only the path routes within the worker.
+  const hookUrl = `https://self/api/hook/${formUID}`;
+  return self.fetch(hookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(submission),

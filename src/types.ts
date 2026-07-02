@@ -84,6 +84,7 @@ export interface FailureNotification {
 export interface Env {
   FORM_SESSION: DurableObjectNamespace;
   FORWARD_CONFIG: KVNamespace;
+  SELF: Fetcher; // service binding to this worker (in-process hook re-invocation)
   DEFAULT_KOBO_BASE_URL: string;
   MAX_BUFFER_SIZE: string;
   MAX_BODY_BYTES: string;

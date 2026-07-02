@@ -2084,8 +2084,9 @@ ui.get("/:uid", (c) => {
         const timeStr = t && !isNaN(t) ? (t.toLocaleDateString(undefined, {month:'short',day:'numeric',year:'numeric'}) + ' ' + t.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit'})) : '—';
         const subId = escHtml(r.uuid ? r.uuid.slice(0, 8) + '…' : (r.id != null ? String(r.id) : '—'));
         let statusCell = '';
+        const errTitle = r.error ? ' title="' + escHtml(r.error) + '"' : '';
         if (r.status === 'ok') statusCell = '<span class="backfill-status ok">✓ Pushed</span>';
-        else if (r.status === 'error') statusCell = '<span class="backfill-status fail">✗ Failed</span>';
+        else if (r.status === 'error') statusCell = '<span class="backfill-status fail"' + errTitle + '>✗ Failed' + (r.error ? ' ⓘ' : '') + '</span>';
         else if (r.status === 'not_found') statusCell = '<span class="backfill-status fail">Not found</span>';
         else if (r.status === 'pushing') statusCell = '<span class="backfill-status pending">…</span>';
         return '<tr>' +
@@ -2181,11 +2182,19 @@ ui.get("/:uid", (c) => {
             body: JSON.stringify({ uuids: batch.map(r => r.uuid) })
           });
           const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const msg = data.error || ('HTTP ' + res.status);
+            batch.forEach(r => { r.status = 'error'; r.error = msg; });
+            renderPendingTable();
+            updateSelectedCount();
+            continue;
+          }
           const byUuid = {};
           (data.results || []).forEach(r => { byUuid[r.uuid] = r; });
           batch.forEach(r => {
             const result = byUuid[r.uuid];
             r.status = result ? result.status : 'error';
+            r.error = result && result.error ? result.error : (result ? '' : 'No result returned');
             if (r.status === 'ok') r.selected = false;
           });
           renderPendingTable();
@@ -2198,8 +2207,9 @@ ui.get("/:uid", (c) => {
       } finally {
         if (btn) { btn.textContent = 'Push selected'; }
         updateSelectedCount();
-        // Refresh the submission log so the new attempts appear
-        setTimeout(() => refreshLogs(true), 1000);
+        // The hook writes its log entry in a background task that finishes after
+        // the push response returns, so refresh a few times to catch it.
+        [1500, 4000, 8000].forEach(delay => setTimeout(() => refreshLogs(true), delay));
       }
     }
 

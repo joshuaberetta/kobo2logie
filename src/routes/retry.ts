@@ -40,9 +40,8 @@ retry.post("/:formUID", async (c) => {
     return c.json({ error: "Submission not found in Kobo" }, 404);
   }
 
-  // Re-drive the hook pipeline by posting to the hook endpoint
-  const workerOrigin = new URL(c.req.url).origin;
-  const hookRes = await repostToHook(workerOrigin, formUID, submission);
+  // Re-drive the hook pipeline by posting to the hook endpoint (in-process via SELF)
+  const hookRes = await repostToHook(c.env.SELF, formUID, submission);
 
   if (!hookRes.ok) {
     return c.json({ error: `Hook pipeline returned HTTP ${hookRes.status}` }, 502);

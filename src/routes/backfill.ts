@@ -130,18 +130,25 @@ backfill.post("/:formUID/push", async (c) => {
     global: c.env.KOBO_API_TOKEN_GLOBAL,
     eu: c.env.KOBO_API_TOKEN_EU,
   });
-  const workerOrigin = new URL(c.req.url).origin;
 
   type PushResult = { uuid: string; status: "ok" | "not_found" | "error"; httpStatus?: number; error?: string };
 
   async function pushOne(uuid: string): Promise<PushResult> {
     try {
       const submission = await fetchKoboSubmissionByUuid(server, formUID, uuid, koboToken);
-      if (!submission) return { uuid, status: "not_found" };
-      const hookRes = await repostToHook(workerOrigin, formUID, submission);
-      if (!hookRes.ok) return { uuid, status: "error", httpStatus: hookRes.status };
+      if (!submission) {
+        console.error(`[backfill] push ${uuid}: submission not found in Kobo`);
+        return { uuid, status: "not_found" };
+      }
+      const hookRes = await repostToHook(c.env.SELF, formUID, submission);
+      if (!hookRes.ok) {
+        const text = await hookRes.text().catch(() => "");
+        console.error(`[backfill] push ${uuid}: hook returned HTTP ${hookRes.status} — ${text.slice(0, 300)}`);
+        return { uuid, status: "error", httpStatus: hookRes.status, error: text.slice(0, 300) || `HTTP ${hookRes.status}` };
+      }
       return { uuid, status: "ok", httpStatus: hookRes.status };
     } catch (err) {
+      console.error(`[backfill] push ${uuid} threw: ${err instanceof Error ? err.stack || err.message : String(err)}`);
       return { uuid, status: "error", error: String(err) };
     }
   }
