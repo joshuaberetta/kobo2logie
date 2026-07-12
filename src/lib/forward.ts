@@ -4,11 +4,12 @@ import { transcribeAudio } from "./transcribe.js";
 import { extractFields } from "./extract.js";
 import { analyzeAudioText } from "./analyzeAudio.js";
 import { extractTextFields } from "./extractText.js";
+import { geocodeAddress } from "./geocode.js";
 import type { EnrichmentStepResult } from "../types.js";
 
 const EU_HOSTNAME = "eu.kobotoolbox.org";
 
-type PromptField = { key: string; instruction: string };
+type PromptField = { key: string; instruction: string; geocode?: boolean };
 type PromptEntry = { description?: string; fields: PromptField[] };
 type PromptMap = Record<string, PromptEntry>;
 
@@ -29,6 +30,49 @@ function buildPromptFromFields(stored: PromptEntry): string {
     );
   }
   return parts.join("\n\n");
+}
+
+/**
+ * For each extracted field flagged `geocode: true` in the prompt config, forward-
+ * geocode its string value via `geocodeAddress()` and write the resulting
+ * `_latitude` / `_longitude` / `_adm{n}_*` fields into both `payload` and
+ * `enrichment`, prefixed with the extracted field's key
+ * (e.g. `address` → `address_adm1_name`).
+ *
+ * Returns the list of keys written, so the caller can append them to the step's
+ * `keys` array for logging. Never throws — `geocodeAddress()` swallows its errors.
+ */
+async function geocodeExtractedFields(
+  prompts: PromptMap | undefined,
+  questionName: string,
+  extracted: Record<string, string>,
+  payload: Record<string, unknown>,
+  enrichment: Record<string, string>
+): Promise<string[]> {
+  const geocodeKeys = (prompts?.[questionName]?.fields ?? [])
+    .filter((f) => f.geocode && f.key.trim())
+    .map((f) => f.key.trim());
+  if (geocodeKeys.length === 0) return [];
+
+  const written: string[] = [];
+  await Promise.all(
+    geocodeKeys.map(async (key) => {
+      const value = extracted[key];
+      if (typeof value !== "string" || !value.trim()) return;
+      try {
+        const geo = await geocodeAddress(value.trim());
+        for (const [k, v] of Object.entries(geo)) {
+          const prefixedKey = `${key}${k}`;
+          payload[prefixedKey] = v;
+          enrichment[prefixedKey] = v;
+          written.push(prefixedKey);
+        }
+      } catch (err) {
+        console.error(`[geocode-extracted] Error geocoding "${key}" for "${questionName}":`, err);
+      }
+    })
+  );
+  return written;
 }
 
 export interface ForwardResult {
@@ -241,7 +285,10 @@ export async function forwardSubmission(
                   writtenKeys.push(k);
                 }
               }
-              steps.analyzeAudio![questionName] = { ok: true, keys: writtenKeys };
+              const geoKeys = await geocodeExtractedFields(
+                analyzeAudioConfig.prompts, questionName, analyzed, payload, enrichment
+              );
+              steps.analyzeAudio![questionName] = { ok: true, keys: [...writtenKeys, ...geoKeys] };
             } else {
               steps.analyzeAudio![questionName] = { ok: false, error: "No analysis returned" };
             }
@@ -298,7 +345,10 @@ export async function forwardSubmission(
                   writtenKeys.push(k);
                 }
               }
-              steps.extract![questionName] = { ok: true, keys: writtenKeys };
+              const geoKeys = await geocodeExtractedFields(
+                extractConfig.prompts, questionName, extracted, payload, enrichment
+              );
+              steps.extract![questionName] = { ok: true, keys: [...writtenKeys, ...geoKeys] };
             } else {
               steps.extract![questionName] = { ok: false, error: "No fields extracted" };
             }
@@ -339,7 +389,10 @@ export async function forwardSubmission(
                   writtenKeys.push(k);
                 }
               }
-              steps.extractText![questionName] = { ok: true, keys: writtenKeys };
+              const geoKeys = await geocodeExtractedFields(
+                extractTextConfig.prompts, questionName, extracted, payload, enrichment
+              );
+              steps.extractText![questionName] = { ok: true, keys: [...writtenKeys, ...geoKeys] };
             } else {
               steps.extractText![questionName] = { ok: false, error: "No fields extracted" };
             }

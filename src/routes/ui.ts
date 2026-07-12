@@ -441,6 +441,9 @@ ui.get("/:uid", (c) => {
     .kv-row input { min-width: 0; }
     .kv-row textarea { min-width: 0; font-size: .82rem; padding: .35rem .55rem; border-radius: 6px; resize: vertical; }
     #prompt-modal-fields .kv-row { align-items: start; }
+    .pf-key-col { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+    .pf-geocode { display: flex; align-items: center; gap: .3rem; margin: 0; font-size: .72rem; font-weight: 600; color: #6b7280; cursor: pointer; }
+    .pf-geocode input { margin: 0; cursor: pointer; }
     .kv-remove { background: none; border: 1.5px solid #e5e7eb; border-radius: 6px; font-size: 1rem; color: #9ca3af; cursor: pointer; padding: .25rem .45rem; line-height: 1; }
     .kv-remove:hover { border-color: #fca5a5; color: #dc2626; }
     .kv-add { background: none; border: 1.5px dashed #d1d5db; border-radius: 6px; font-size: .8rem; font-weight: 600; color: #6b7280; cursor: pointer; padding: .35rem .6rem; align-self: flex-start; margin-top: .15rem; }
@@ -1199,9 +1202,14 @@ ui.get("/:uid", (c) => {
     }
 
     // ── Per-question prompt modal ─────────────────────────────────────────────
-    function promptFieldRowHtml(key, instruction) {
+    function promptFieldRowHtml(key, instruction, geocode) {
       return '<div class="kv-row">' +
-        '<input type="text" class="pf-key" placeholder="e.g. group1/person_name" value="' + escHtml(key ?? '') + '" autocomplete="off" spellcheck="false" />' +
+        '<div class="pf-key-col">' +
+          '<input type="text" class="pf-key" placeholder="e.g. group1/person_name" value="' + escHtml(key ?? '') + '" autocomplete="off" spellcheck="false" />' +
+          '<label class="pf-geocode" title="Run this extracted value through the address geocoder to derive lat/lon and admin P-codes.">' +
+            '<input type="checkbox" class="pf-geocode-cb"' + (geocode ? ' checked' : '') + ' /> Geocode as address' +
+          '</label>' +
+        '</div>' +
         '<textarea class="pf-desc" rows="2" placeholder="what to extract" autocomplete="off" spellcheck="false">' + escHtml(instruction ?? '') + '</textarea>' +
         '<button type="button" class="kv-remove" onclick="this.parentElement.remove()" title="Remove">&times;</button>' +
         '</div>';
@@ -1209,7 +1217,7 @@ ui.get("/:uid", (c) => {
 
     function addPromptField() {
       const container = document.getElementById('prompt-modal-fields');
-      container.insertAdjacentHTML('beforeend', promptFieldRowHtml('', ''));
+      container.insertAdjacentHTML('beforeend', promptFieldRowHtml('', '', false));
       container.querySelector('.kv-row:last-child .pf-key')?.focus();
     }
 
@@ -1224,8 +1232,8 @@ ui.get("/:uid", (c) => {
       document.getElementById('prompt-modal-description').value = stored.description || '';
       const fields = stored.fields || [];
       const container = document.getElementById('prompt-modal-fields');
-      container.innerHTML = fields.map(f => promptFieldRowHtml(f.key, f.instruction)).join('');
-      if (fields.length === 0) container.insertAdjacentHTML('beforeend', promptFieldRowHtml('', ''));
+      container.innerHTML = fields.map(f => promptFieldRowHtml(f.key, f.instruction, f.geocode)).join('');
+      if (fields.length === 0) container.insertAdjacentHTML('beforeend', promptFieldRowHtml('', '', false));
       document.getElementById('prompt-modal').classList.add('open');
       document.getElementById('prompt-modal-description').focus();
     }
@@ -1236,7 +1244,8 @@ ui.get("/:uid", (c) => {
       const fields = Array.from(document.querySelectorAll('#prompt-modal-fields .kv-row')).reduce(function(acc, row) {
         const key = row.querySelector('.pf-key').value.trim();
         const instruction = row.querySelector('.pf-desc').value.trim();
-        if (key) acc.push({ key, instruction });
+        const geocode = row.querySelector('.pf-geocode-cb')?.checked === true;
+        if (key) acc.push({ key, instruction, ...(geocode ? { geocode: true } : {}) });
         return acc;
       }, []);
       if (description || fields.length > 0) {

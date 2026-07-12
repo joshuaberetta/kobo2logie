@@ -208,9 +208,9 @@ configure.get("/project/:uid", async (c) => {
         forwardToLogie?: boolean;
         fields?: string[];
         transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string };
-        extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
-        analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
-        extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> };
+        extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> };
+        analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> };
+        extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> };
         forwardMedia?: string[];
         appendValues?: Array<{ key: string; value: string }>;
         appendProjectMetadata?: boolean;
@@ -262,9 +262,9 @@ configure.post("/project/:uid", async (c) => {
     forwardToLogie?: boolean;
     fields?: string[];
     transcribe?: { questions: string[]; model?: string; prompt?: string; translateTo?: string } | null;
-    extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
-    analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
-    extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | null;
+    extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> } | null;
+    analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> } | null;
+    extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> } | null;
     forwardMedia?: string[] | null;
     appendValues?: Array<{ key: string; value: string }> | null;
     appendProjectMetadata?: boolean;
@@ -309,7 +309,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate extract config if provided
-  let safeExtract: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | undefined;
+  let safeExtract: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> } | undefined;
   if (extract != null) {
     if (!Array.isArray(extract.questions)) {
       return c.json({ error: "extract.questions must be an array" }, 400);
@@ -317,7 +317,7 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = extract.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
-    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> = {};
+    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> = {};
     if (extract.prompts && typeof extract.prompts === "object" && !Array.isArray(extract.prompts)) {
       for (const [questionXpath, stored] of Object.entries(extract.prompts as Record<string, unknown>)) {
         if (typeof questionXpath !== "string" || !questionXpath.trim()) continue;
@@ -325,11 +325,12 @@ configure.post("/project/:uid", async (c) => {
         const s = stored as Record<string, unknown>;
         const description = typeof s.description === "string" ? s.description.trim() : undefined;
         const fields = Array.isArray(s.fields) ? s.fields : [];
-        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string }>>((acc, f) => {
+        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string; geocode?: boolean }>>((acc, f) => {
           if (f && typeof f === "object" && !Array.isArray(f)) {
             const key = String((f as Record<string, unknown>).key ?? "").trim();
             const instruction = String((f as Record<string, unknown>).instruction ?? "").trim();
-            if (key) acc.push({ key, instruction });
+            const geocode = (f as Record<string, unknown>).geocode === true;
+            if (key) acc.push({ key, instruction, ...(geocode ? { geocode: true } : {}) });
           }
           return acc;
         }, []);
@@ -346,7 +347,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate analyzeAudio config if provided
-  let safeAnalyzeAudio: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | undefined;
+  let safeAnalyzeAudio: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> } | undefined;
   if (analyzeAudio != null) {
     if (!Array.isArray(analyzeAudio.questions)) {
       return c.json({ error: "analyzeAudio.questions must be an array" }, 400);
@@ -354,7 +355,7 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = analyzeAudio.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
-    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> = {};
+    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> = {};
     if (analyzeAudio.prompts && typeof analyzeAudio.prompts === "object" && !Array.isArray(analyzeAudio.prompts)) {
       for (const [questionXpath, stored] of Object.entries(analyzeAudio.prompts as Record<string, unknown>)) {
         if (typeof questionXpath !== "string" || !questionXpath.trim()) continue;
@@ -362,11 +363,12 @@ configure.post("/project/:uid", async (c) => {
         const s = stored as Record<string, unknown>;
         const description = typeof s.description === "string" ? s.description.trim() : undefined;
         const fields = Array.isArray(s.fields) ? s.fields : [];
-        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string }>>((acc, f) => {
+        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string; geocode?: boolean }>>((acc, f) => {
           if (f && typeof f === "object" && !Array.isArray(f)) {
             const key = String((f as Record<string, unknown>).key ?? "").trim();
             const instruction = String((f as Record<string, unknown>).instruction ?? "").trim();
-            if (key) acc.push({ key, instruction });
+            const geocode = (f as Record<string, unknown>).geocode === true;
+            if (key) acc.push({ key, instruction, ...(geocode ? { geocode: true } : {}) });
           }
           return acc;
         }, []);
@@ -383,7 +385,7 @@ configure.post("/project/:uid", async (c) => {
   }
 
   // Validate extractText config if provided
-  let safeExtractText: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> } | undefined;
+  let safeExtractText: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> } | undefined;
   if (extractText != null) {
     if (!Array.isArray(extractText.questions)) {
       return c.json({ error: "extractText.questions must be an array" }, 400);
@@ -391,7 +393,7 @@ configure.post("/project/:uid", async (c) => {
     const safeQuestions = extractText.questions
       .map((q) => String(q).trim())
       .filter(Boolean);
-    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string }> }> = {};
+    const safePrompts: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; geocode?: boolean }> }> = {};
     if (extractText.prompts && typeof extractText.prompts === "object" && !Array.isArray(extractText.prompts)) {
       for (const [questionXpath, stored] of Object.entries(extractText.prompts as Record<string, unknown>)) {
         if (typeof questionXpath !== "string" || !questionXpath.trim()) continue;
@@ -399,11 +401,12 @@ configure.post("/project/:uid", async (c) => {
         const s = stored as Record<string, unknown>;
         const description = typeof s.description === "string" ? s.description.trim() : undefined;
         const fields = Array.isArray(s.fields) ? s.fields : [];
-        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string }>>((acc, f) => {
+        const safeFields = (fields as unknown[]).reduce<Array<{ key: string; instruction: string; geocode?: boolean }>>((acc, f) => {
           if (f && typeof f === "object" && !Array.isArray(f)) {
             const key = String((f as Record<string, unknown>).key ?? "").trim();
             const instruction = String((f as Record<string, unknown>).instruction ?? "").trim();
-            if (key) acc.push({ key, instruction });
+            const geocode = (f as Record<string, unknown>).geocode === true;
+            if (key) acc.push({ key, instruction, ...(geocode ? { geocode: true } : {}) });
           }
           return acc;
         }, []);

@@ -197,9 +197,9 @@ hook.post("/:formUID", async (c) => {
       forwardToLogie?: boolean;
       fields?: string[];
       transcribe?: { questions: string[]; model?: string; prompt?: string };
-      extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
-      analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
-      extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string }> }> };
+      extract?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string; geocode?: boolean }> }> };
+      analyzeAudio?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string; geocode?: boolean }> }> };
+      extractText?: { questions: string[]; model?: string; prompts?: Record<string, { description?: string; fields: Array<{ key: string; instruction: string; type?: string; geocode?: boolean }> }> };
       forwardMedia?: string[];
       appendValues?: Array<{ key: string; value: string }>;
       appendProjectMetadata?: boolean;
